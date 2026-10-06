@@ -21,23 +21,23 @@ func TestLoadDefaultsAdvertiseIPToLoopback(t *testing.T) {
 	if cfg.AdvertiseIP != "127.0.0.1" {
 		t.Fatalf("AdvertiseIP = %q, want loopback default", cfg.AdvertiseIP)
 	}
-	if cfg.PublicBaseURL != "https://telesrv.net" {
-		t.Fatalf("PublicBaseURL = %q, want https://telesrv.net", cfg.PublicBaseURL)
+	if cfg.PublicBaseURL != "https://coachgram.net" {
+		t.Fatalf("PublicBaseURL = %q, want https://coachgram.net", cfg.PublicBaseURL)
 	}
-	if cfg.PublicAppScheme != "telesrv" {
-		t.Fatalf("PublicAppScheme = %q, want telesrv", cfg.PublicAppScheme)
+	if cfg.PublicAppScheme != "coachgram" {
+		t.Fatalf("PublicAppScheme = %q, want coachgram", cfg.PublicAppScheme)
 	}
 	if cfg.PublicAppLinkBase != "" {
 		t.Fatalf("PublicAppLinkBase = %q, want disabled", cfg.PublicAppLinkBase)
 	}
-	if cfg.PublicWebBaseURL != "https://weba.telesrv.net" {
-		t.Fatalf("PublicWebBaseURL = %q, want https://weba.telesrv.net", cfg.PublicWebBaseURL)
+	if cfg.PublicWebBaseURL != "https://weba.coachgram.net" {
+		t.Fatalf("PublicWebBaseURL = %q, want https://weba.coachgram.net", cfg.PublicWebBaseURL)
 	}
-	if cfg.PublicAppName != "Telesrv" {
-		t.Fatalf("PublicAppName = %q, want Telesrv", cfg.PublicAppName)
+	if cfg.PublicAppName != "CoachGram" {
+		t.Fatalf("PublicAppName = %q, want CoachGram", cfg.PublicAppName)
 	}
-	if cfg.Branding.ProductName != "Telesrv" || cfg.Branding.ProductUsername != "telesrv" ||
-		cfg.Branding.DesktopAppName != "Telesrv Desktop" || cfg.Branding.StarsName != "Telesrv Stars" ||
+	if cfg.Branding.ProductName != "CoachGram" || cfg.Branding.ProductUsername != "coachgram" ||
+		cfg.Branding.DesktopAppName != "CoachGram Desktop" || cfg.Branding.StarsName != "CoachGram Stars" ||
 		cfg.Branding.PublicBaseURL != cfg.PublicBaseURL {
 		t.Fatalf("Branding = %+v", cfg.Branding)
 	}

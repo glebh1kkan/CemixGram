@@ -7,9 +7,9 @@ import (
 )
 
 const (
-	DefaultPublicBaseURL = "https://telesrv.net"
-	DefaultWebBaseURL    = "https://weba.telesrv.net"
-	DefaultAppScheme     = "telesrv"
+	DefaultPublicBaseURL = "https://coachgram.net"
+	DefaultWebBaseURL    = "https://weba.coachgram.net"
+	DefaultAppScheme     = "coachgram"
 )
 const MaxChatlistSlugBytes = 128
 
@@ -256,7 +256,7 @@ func Build(baseURL, path string, query url.Values) string {
 func Host(baseURL string) string {
 	baseURL, err := ValidateBaseURL(baseURL)
 	if err != nil {
-		return "telesrv.net"
+		return "coachgram.net"
 	}
 	parsed, _ := url.Parse(baseURL)
 	if host := parsed.Hostname(); host != "" {

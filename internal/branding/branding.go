@@ -35,16 +35,16 @@ type Config struct {
 
 var (
 	defaultConfig = Config{
-		ProductName:     "Telesrv",
-		ProductUsername: "telesrv",
-		DesktopAppName:  "Telesrv Desktop",
-		AndroidAppName:  "Telesrv Android",
-		IOSAppName:      "Telesrv iOS",
-		MacOSAppName:    "Telesrv macOS",
-		WebAAppName:     "Telesrv Web A",
-		WebKAppName:     "Telesrv Web K",
-		PremiumName:     "Telesrv Premium",
-		StarsName:       "Telesrv Stars",
+		ProductName:     "CoachGram",
+		ProductUsername: "coachgram",
+		DesktopAppName:  "CoachGram Desktop",
+		AndroidAppName:  "CoachGram Android",
+		IOSAppName:      "CoachGram iOS",
+		MacOSAppName:    "CoachGram macOS",
+		WebAAppName:     "CoachGram Web A",
+		WebKAppName:     "CoachGram Web K",
+		PremiumName:     "CoachGram Premium",
+		StarsName:       "CoachGram Stars",
 		PublicBaseURL:   links.DefaultPublicBaseURL,
 	}
 	configured atomic.Pointer[Config]

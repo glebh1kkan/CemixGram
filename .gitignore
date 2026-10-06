@@ -42,3 +42,8 @@ tmp/
 
 # Internal server deployment script (not part of the public repository)
 /scripts/install.sh
+
+# CoachGram: fetched seed snapshots (large binaries, refetchable via bin/fetchers)
+# and the operator Telegram session (secret, never commit).
+/seed-src/
+/.session/
