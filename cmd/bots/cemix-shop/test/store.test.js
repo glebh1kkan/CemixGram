@@ -21,7 +21,7 @@ describe("связь номер-аккаунт 1 к 1", () => {
     for (const name of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
       await pool.query(readFileSync(join(dir, name), "utf8"));
     }
-    await pool.query("TRUNCATE links, deliveries, grants, nft_sales");
+    await pool.query("TRUNCATE links, deliveries, grants, nft_sales, ton_sales");
     await pool.end();
     store = createStore(testURL);
   });

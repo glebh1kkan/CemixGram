@@ -25,7 +25,7 @@ export const NFT_PACKAGES = [
 export const NFT_USERNAME_TAKEN_TG = 100;
 export const NFT_USERNAME_FREE_TG = 50;
 
-// граммы ton за звёзды: 1 грамм = 50 ⭐ тг, минимум 0.1.
+// грамы за звёзды: 1 грам = 50 ⭐ тг, минимум 0.1.
 export const GRAM_RATE_TG = 50;
 export const MIN_GRAMS = 0.1;
 export const MAX_GRAMS = 100;
@@ -64,8 +64,8 @@ export function parseGrams(raw) {
 
 export function tonInvoice(grams, tgStars) {
   return {
-    title: `тон-граммы × ${grams}`,
-    description: `${grams} gram на баланс (1 грамм = ${GRAM_RATE_TG} ⭐ тг) • cemix`,
+    title: `грамы × ${grams}`,
+    description: `${grams} gram на баланс (1 грам = ${GRAM_RATE_TG} ⭐ тг) • cemix`,
     payload: `ton:${grams}`,
     currency: "XTR",
     prices: [{ label: `${grams} gram`, amount: tgStars }],

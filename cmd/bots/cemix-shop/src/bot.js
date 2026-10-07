@@ -16,7 +16,7 @@ export function mainMenu(isOwner = false) {
     .text("🎲 мой номер", "get_number").row()
     .text("⭐ звёзды", "menu_shop").text("🐳 мажорки", "menu_whales").row()
     .text("🔢 нфт номера", "menu_nft").text("🔗 нфт юзернейм", "menu_username").row()
-    .text("🪙 граммы", "menu_ton").row()
+    .text("🪙 грамы", "menu_ton").row()
     .text("💰 баланс", "menu_balance");
   if (isOwner) {
     menu.row().text("📊 стата", "menu_stats").text("🏆 топ", "menu_top");
@@ -172,7 +172,7 @@ export function createBot({ config, store, cemixgram }) {
       await say(ctx, config, "👆 сначала возьми номер — /start");
       return;
     }
-    await say(ctx, config, `{coin} граммы ton\n${DIV}\n1 грамм = ${GRAM_RATE_TG} {star} тг, от ${MIN_GRAMS} • cemix`, { reply_markup: tonMenu() });
+    await say(ctx, config, `{coin} грамы\n${DIV}\n1 грам = ${GRAM_RATE_TG} {star} тг, от ${MIN_GRAMS} • cemix`, { reply_markup: tonMenu() });
   });
 
   bot.callbackQuery("menu_balance", async (ctx) => {
@@ -303,7 +303,7 @@ export function createBot({ config, store, cemixgram }) {
     }
     awaitingGrams.set(ctx.from.id, true);
     await ctx.answerCallbackQuery();
-    await say(ctx, config, `✏️ сколько грамм? (от ${MIN_GRAMS} до ${MAX_GRAMS}) • cemix`);
+    await say(ctx, config, `✏️ сколько грам? (от ${MIN_GRAMS} до ${MAX_GRAMS}) • cemix`);
   });
 
   bot.callbackQuery("custom_amount", async (ctx) => {
@@ -360,7 +360,7 @@ export function createBot({ config, store, cemixgram }) {
     if (awaitingGrams.has(ctx.from.id)) {
       const grams = parseGrams(ctx.message.text);
       if (!grams) {
-        await ctx.reply(`🔢 нужно от ${MIN_GRAMS} до ${MAX_GRAMS} грамм`);
+        await ctx.reply(`🔢 нужно от ${MIN_GRAMS} до ${MAX_GRAMS} грам`);
         return;
       }
       awaitingGrams.delete(ctx.from.id);
@@ -471,7 +471,7 @@ export async function sellNftNumber(ctx, { store, cemixgram, nft, fgUser, charge
   await ctx.reply("💸 оплата прошла, а свободный номер не подобрался — напиши в поддержку");
 }
 
-// начисление грамм ton после оплаты: идемпотентно по charge.
+// начисление грам после оплаты: идемпотентно по charge.
 export async function sellTonGrams(ctx, { config, store, ton, fgUser, chargeID }) {
   try {
     const ok = await store.creditTon({
@@ -484,7 +484,7 @@ export async function sellTonGrams(ctx, { config, store, ton, fgUser, chargeID }
     }
     await say(ctx, config, `{party} +${ton.grams} gram на балансе • cemix`);
   } catch (error) {
-    await say(ctx, config, "💸 оплата прошла, а граммы не начислены — напиши в поддержку • cemix");
+    await say(ctx, config, "💸 оплата прошла, а грамы не начислены — напиши в поддержку • cemix");
   }
 }
 
