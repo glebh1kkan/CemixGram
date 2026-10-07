@@ -128,8 +128,14 @@ func (r *Router) sendOutgoing(ctx context.Context, userID int64, peer domain.Pee
 	if r.deps.Messages == nil {
 		return nil, false, peerIDInvalidErr()
 	}
-	if err := r.ensurePrivateContactAllowed(ctx, userID, peer.ID, p.allowPaidStars, 1); err != nil {
+	paidRequired, err := r.privatePaidRequirement(ctx, userID, peer.ID, p.allowPaidStars, 1)
+	if err != nil {
 		return nil, false, err
+	}
+	if paidRequired > 0 {
+		if err := r.debitPrivatePaidSender(ctx, userID, peer.ID, paidRequired); err != nil {
+			return nil, false, err
+		}
 	}
 	if err := r.ensureVoiceMessagesAllowed(ctx, userID, peer, p.media != nil && p.media.HasUnreadPayload()); err != nil {
 		return nil, false, err
@@ -192,6 +198,9 @@ func (r *Router) sendOutgoing(ctx context.Context, userID int64, peer domain.Pee
 		Effect:                 p.effect,
 	})
 	if err != nil {
+		if paidRequired > 0 {
+			r.refundPrivatePaidSender(ctx, userID, peer.ID, paidRequired)
+		}
 		fields := append(r.contextLogFields(ctx),
 			zap.Error(err),
 			zap.Int64("user_id", userID),
@@ -209,6 +218,13 @@ func (r *Router) sendOutgoing(ctx context.Context, userID int64, peer domain.Pee
 	}
 	var users []tg.UserClass
 	var chats []tg.ChatClass
+	if paidRequired > 0 {
+		if res.Duplicate {
+			r.refundPrivatePaidSender(ctx, userID, peer.ID, paidRequired)
+		} else if err := r.creditPrivatePaidRecipient(ctx, userID, peer.ID, paidRequired); err != nil {
+			return nil, false, err
+		}
+	}
 	if !res.Duplicate {
 		users = r.usersForMessageUpdateWithPreloaded(ctx, userID, res.SenderMessage, projectedUsers)
 		chats = r.chatsForMessageUpdate(ctx, userID, res.SenderMessage)

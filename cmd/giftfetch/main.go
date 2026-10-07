@@ -202,14 +202,15 @@ func main() {
 	workers := flag.Int("workers", defaultWorkers, "concurrent document downloads")
 	reuseMetadata := flag.Bool("reuse-metadata", false, "reuse and strictly decode catalog.tl plus upgrade-attributes/*.tl instead of refetching metadata")
 	allowedMissingThumbsRaw := flag.String("allow-missing-thumb", "", "comma-separated document_id:photo|video:type entries that may be recorded as explicitly missing after a failed download")
+	emitPartial := flag.Bool("emit-partial", false, "write manifest.json from files already on disk (no network, no SESSION): only gifts and upgrade sets whose documents are fully downloaded are included")
 	flag.Parse()
 	if strings.TrimSpace(*outDir) == "" {
 		fmt.Fprintln(os.Stderr, "usage: SESSION=/path/to/session giftfetch -out <directory>")
 		os.Exit(2)
 	}
 	session := strings.TrimSpace(os.Getenv("SESSION"))
-	if session == "" {
-		fmt.Fprintln(os.Stderr, "ERROR: SESSION is required")
+	if session == "" && !*emitPartial {
+		fmt.Fprintln(os.Stderr, "ERROR: SESSION is required (not needed for -emit-partial)")
 		os.Exit(2)
 	}
 	if *maxDocBytes <= 0 || *maxDocBytes > 256<<20 {
@@ -251,6 +252,14 @@ func main() {
 	}
 
 	client := telegram.NewClient(apiID, apiHash, opts)
+
+	if *emitPartial {
+		if err := emitPartialManifest(*outDir, *maxDocBytes); err != nil {
+			fmt.Fprintln(os.Stderr, "ERROR:", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if err := client.Run(ctx, func(ctx context.Context) error {
 		status, err := client.Auth().Status(ctx)
@@ -469,6 +478,187 @@ func fetchCatalog(ctx context.Context, api *tg.Client, outDir string, maxDocByte
 		return err
 	}
 	fmt.Printf("[complete] gifts=%d attribute_sets=%d attributes=%d documents=%d missing_thumbs=%d bytes=%d manifest=%s\n", len(manifest.Gifts), len(manifest.UpgradeAttributeSets), manifest.UpgradeAttributeCount, len(manifest.Documents), manifest.MissingThumbCount, manifest.TotalBytes, filepath.Join(outDir, "manifest.json"))
+	return nil
+}
+
+// emitPartialManifest writes manifest.json from whatever is already on disk,
+// without touching the network. Only regular gifts and upgrade attribute sets
+// whose documents are fully downloaded are included; counts are recomputed so
+// the manifest stays valid. Re-running the normal fetch later and emitting
+// again grows the catalog incrementally.
+func emitPartialManifest(outDir string, maxDocBytes int64) error {
+	catalog := &tg.PaymentsStarGifts{}
+	rawArtifact, err := readTLArtifact(outDir, "catalog.tl", catalog)
+	if err != nil {
+		return err
+	}
+	documents := make(map[int64]*documentSource)
+	addDocument := func(class tg.DocumentClass, purpose string) (*tg.Document, error) {
+		doc, ok := class.(*tg.Document)
+		if !ok || doc.ID == 0 {
+			return nil, fmt.Errorf("%s references invalid document %T", purpose, class)
+		}
+		existing := documents[doc.ID]
+		if existing == nil {
+			existing = &documentSource{document: doc, purposes: make(map[string]struct{})}
+			documents[doc.ID] = existing
+		}
+		existing.purposes[purpose] = struct{}{}
+		return doc, nil
+	}
+	type giftEntry struct {
+		manifest giftManifest
+		docs     []int64
+	}
+	gifts := make([]giftEntry, 0, len(catalog.Gifts))
+	for index, class := range catalog.Gifts {
+		gm, err := collectGift(index, class, addDocument)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[partial] skip gift index %d: %v\n", index, err)
+			continue
+		}
+		if gm.Kind != "regular" {
+			continue
+		}
+		gifts = append(gifts, giftEntry{manifest: gm, docs: append([]int64(nil), gm.DocumentIDs...)})
+	}
+	upgradeFiles, err := filepath.Glob(filepath.Join(outDir, "upgrade-attributes", "*.tl"))
+	if err != nil {
+		return err
+	}
+	sets := make([]upgradeAttributeSetManifest, 0, len(upgradeFiles))
+	setDocs := make([][]int64, 0, len(upgradeFiles))
+	for _, path := range upgradeFiles {
+		base := strings.TrimSuffix(filepath.Base(path), ".tl")
+		giftID, err := strconv.ParseInt(base, 10, 64)
+		if err != nil || giftID <= 0 {
+			continue
+		}
+		result := &tg.PaymentsStarGiftUpgradeAttributes{}
+		raw, err := readTLArtifact(outDir, filepath.Join("upgrade-attributes", filepath.Base(path)), result)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[partial] skip upgrade attributes %d: %v\n", giftID, err)
+			continue
+		}
+		set, err := collectUpgradeAttributes(giftID, result, raw, addDocument)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[partial] skip upgrade attributes %d: %v\n", giftID, err)
+			continue
+		}
+		sets = append(sets, set)
+		setDocs = append(setDocs, append([]int64(nil), set.DocumentIDs...))
+	}
+	present := make(map[int64]documentManifest)
+	for id, source := range documents {
+		doc := source.document
+		if doc.Size <= 0 || doc.Size > maxDocBytes {
+			continue
+		}
+		fileName, stickerAlt := documentNames(doc)
+		ext := documentExtension(fileName, doc.MimeType)
+		rel := filepath.Join("documents", fmt.Sprintf("%d%s", doc.ID, ext))
+		data, reused, err := existingArtifact(outDir, rel, doc.Size, maxDocBytes)
+		if err != nil || !reused {
+			continue
+		}
+		sum := sha256.Sum256(data)
+		purposes := make([]string, 0, len(source.purposes))
+		for purpose := range source.purposes {
+			purposes = append(purposes, purpose)
+		}
+		sort.Strings(purposes)
+		dm := documentManifest{
+			ID:           doc.ID,
+			Date:         doc.Date,
+			DCID:         doc.DCID,
+			MimeType:     doc.MimeType,
+			ExpectedSize: doc.Size,
+			FileName:     fileName,
+			StickerAlt:   stickerAlt,
+			Purposes:     purposes,
+			File:         fileArtifact{Kind: "document", Path: filepath.ToSlash(rel), Size: int64(len(data)), SHA256: hex.EncodeToString(sum[:])},
+		}
+		if ext == ".tgs" || strings.EqualFold(doc.MimeType, "application/x-tgsticker") {
+			validator := &stargifts.Service{}
+			if _, err := validator.PrepareAnimation(fmt.Sprintf("%d.tgs", doc.ID), data); err != nil {
+				dm.ValidationError = err.Error()
+			} else {
+				dm.AnimationValidated = true
+			}
+		}
+		present[id] = dm
+	}
+	manifest := catalogManifest{
+		Schema:     2,
+		Hash:       catalog.Hash,
+		RawCatalog: rawArtifact,
+		ChatCount:  len(catalog.Chats),
+		UserCount:  len(catalog.Users),
+	}
+	for _, g := range gifts {
+		complete := true
+		for _, id := range g.docs {
+			if _, ok := present[id]; !ok {
+				complete = false
+				break
+			}
+		}
+		if !complete {
+			continue
+		}
+		manifest.Gifts = append(manifest.Gifts, g.manifest)
+	}
+	manifest.GiftCount = len(manifest.Gifts)
+	manifest.UpgradeableGiftCount = len(sets)
+	keptSets := make([]upgradeAttributeSetManifest, 0, len(sets))
+	for i, set := range sets {
+		complete := true
+		for _, id := range setDocs[i] {
+			if _, ok := present[id]; !ok {
+				complete = false
+				break
+			}
+		}
+		if !complete {
+			continue
+		}
+		// the set's gift must itself be present
+		found := false
+		for _, g := range manifest.Gifts {
+			if g.ID == set.GiftID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+		keptSets = append(keptSets, set)
+		manifest.UpgradeAttributeCount += set.AttributeCount
+		manifest.UpgradeModelCount += len(set.Models)
+		manifest.UpgradePatternCount += len(set.Patterns)
+		manifest.UpgradeBackdropCount += len(set.Backdrops)
+	}
+	manifest.UpgradeAttributeSets = keptSets
+	manifest.UpgradeAttributeSetCount = len(keptSets)
+	for _, dm := range present {
+		manifest.Documents = append(manifest.Documents, dm)
+		manifest.TotalBytes += dm.File.Size
+	}
+	sort.Slice(manifest.Documents, func(i, j int) bool { return manifest.Documents[i].ID < manifest.Documents[j].ID })
+	// Note: server-side validation requires UpgradeAttributeSets entries to
+	// reference an included gift with full models/patterns/backdrops, which the
+	// filters above guarantee.
+	encoded, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := writeFileAtomic(filepath.Join(outDir, "manifest.json"), append(encoded, '\n')); err != nil {
+		return err
+	}
+	fmt.Printf("[partial complete] gifts=%d attribute_sets=%d attributes=%d documents=%d bytes=%d manifest=%s\n",
+		len(manifest.Gifts), len(manifest.UpgradeAttributeSets), manifest.UpgradeAttributeCount,
+		len(manifest.Documents), manifest.TotalBytes, filepath.Join(outDir, "manifest.json"))
 	return nil
 }
 

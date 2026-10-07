@@ -9,6 +9,7 @@ type captureMessages struct {
 	list              domain.MessageList
 	filter            domain.MessageFilter
 	sendResult        domain.SendPrivateTextResult
+	sendErr             error
 	sendUserID        int64
 	sendReq           domain.SendPrivateTextRequest
 	setThemeUserID    int64
@@ -247,6 +248,9 @@ func (s *scheduledCaptureMessages) removeScheduled(filter domain.ScheduledMessag
 func (s *captureMessages) SendPrivateText(_ context.Context, userID int64, req domain.SendPrivateTextRequest) (domain.SendPrivateTextResult, error) {
 	s.sendUserID = userID
 	s.sendReq = req
+	if s.sendErr != nil {
+		return domain.SendPrivateTextResult{}, s.sendErr
+	}
 	if s.sendResult.SenderMessage.ID == 0 {
 		s.sendResult.SenderMessage = domain.Message{
 			ID:          1,

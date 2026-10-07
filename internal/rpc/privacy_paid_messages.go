@@ -130,8 +130,44 @@ func (r *Router) ensurePrivateContactAllowed(
 	if allowPaidStars < required {
 		return allowPaymentRequiredErr(required)
 	}
-	// The privacy gate and no-paid exception are complete here. The separate
-	// private paid-message ledger is not part of the current message store yet;
-	// never accept an authorization without an atomic debit.
-	return paymentUnsupportedErr()
+	return nil
+}
+
+// privatePaidRequirement validates the sender's paid authorization against the
+// recipient's price and returns the total charge (0 = free). It never touches
+// the ledger; charging is orchestrated by the send path (debit first, refund on
+// failure/duplicate, credit the recipient on fresh commit).
+func (r *Router) privatePaidRequirement(
+	ctx context.Context,
+	senderUserID, recipientUserID, allowPaidStars int64,
+	messageCount int,
+) (int64, error) {
+	if allowPaidStars < 0 || messageCount < 1 {
+		return 0, starsAmountInvalidErr()
+	}
+	requirement, err := r.privateContactRestrictionFor(ctx, senderUserID, recipientUserID)
+	if err != nil {
+		return 0, err
+	}
+	if requirement.requirePremium {
+		premium, err := r.viewerIsPremiumForPrivacy(ctx, senderUserID)
+		if err != nil {
+			return 0, err
+		}
+		if !premium {
+			return 0, premiumAccountRequiredErr()
+		}
+		return 0, nil
+	}
+	if requirement.paidStars <= 0 {
+		return 0, nil
+	}
+	if requirement.paidStars > math.MaxInt64/int64(messageCount) {
+		return 0, starsAmountInvalidErr()
+	}
+	required := requirement.paidStars * int64(messageCount)
+	if allowPaidStars < required {
+		return 0, allowPaymentRequiredErr(required)
+	}
+	return required, nil
 }

@@ -143,13 +143,13 @@ func (r *Router) onMessagesForwardMessages(ctx context.Context, req *tg.Messages
 	if err != nil {
 		return nil, err
 	}
-	if toPeer.Type == domain.PeerTypeUser {
-		if req.AllowPaidFloodskip {
-			return nil, paymentUnsupportedErr()
-		}
-		if err := r.ensurePrivateContactAllowed(ctx, userID, toPeer.ID, req.AllowPaidStars, len(absentIndexes)); err != nil {
-			return nil, err
-		}
+	forwardPaidTotal, err := r.forwardPaidRequirement(ctx, userID, toPeer, req.AllowPaidStars, req.AllowPaidFloodskip, len(absentIndexes))
+	if err != nil {
+		return nil, err
+	}
+	forwardPaidEach := int64(0)
+	if len(absentIndexes) > 0 {
+		forwardPaidEach = forwardPaidTotal / int64(len(absentIndexes))
 	}
 	absentIDs := make([]int, len(absentIndexes))
 	absentRandomIDs := make([]int64, len(absentIndexes))
@@ -304,24 +304,48 @@ func (r *Router) onMessagesForwardMessages(ctx context.Context, req *tg.Messages
 				saved.SavedFromMsgID = req.ID[i]
 				forward = &saved
 			}
-			sent, err := r.deps.Messages.SendPrivateText(ctx, userID, domain.SendPrivateTextRequest{
-				SenderUserID:           userID,
-				RecipientUserID:        toPeer.ID,
-				RandomID:               req.RandomID[i],
-				Message:                source.body,
-				Entities:               source.entities,
-				Media:                  source.media,
-				Silent:                 req.Silent,
-				NoForwards:             req.Noforwards,
-				ReplyTo:                replyTo,
-				Forward:                forward,
-				Date:                   int(r.clock.Now().Unix()),
-				OriginAuthKeyID:        authKeyID,
-				OriginSessionID:        sessionID,
-				RecipientBlocked:       recipientBlocked,
-				IdempotencyFingerprint: idempotencyFingerprints[i],
-				IdempotencyPreflighted: replays[i].checked,
-			})
+			sent, chargeErr, err := func() (domain.SendPrivateTextResult, bool, error) {
+				if forwardPaidEach > 0 {
+					if err := r.debitPrivatePaidSender(ctx, userID, toPeer.ID, forwardPaidEach); err != nil {
+						return domain.SendPrivateTextResult{}, true, err
+					}
+				}
+				sent, err := r.deps.Messages.SendPrivateText(ctx, userID, domain.SendPrivateTextRequest{
+					SenderUserID:           userID,
+					RecipientUserID:        toPeer.ID,
+					RandomID:               req.RandomID[i],
+					Message:                source.body,
+					Entities:               source.entities,
+					Media:                  source.media,
+					Silent:                 req.Silent,
+					NoForwards:             req.Noforwards,
+					ReplyTo:                replyTo,
+					Forward:                forward,
+					Date:                   int(r.clock.Now().Unix()),
+					OriginAuthKeyID:        authKeyID,
+					OriginSessionID:        sessionID,
+					RecipientBlocked:       recipientBlocked,
+					IdempotencyFingerprint: idempotencyFingerprints[i],
+					IdempotencyPreflighted: replays[i].checked,
+				})
+				if err != nil {
+					if forwardPaidEach > 0 {
+						r.refundPrivatePaidSender(ctx, userID, toPeer.ID, forwardPaidEach)
+					}
+					return domain.SendPrivateTextResult{}, false, err
+				}
+				if forwardPaidEach > 0 {
+					if sent.Duplicate {
+						r.refundPrivatePaidSender(ctx, userID, toPeer.ID, forwardPaidEach)
+					} else if err := r.creditPrivatePaidRecipient(ctx, userID, toPeer.ID, forwardPaidEach); err != nil {
+						return domain.SendPrivateTextResult{}, false, err
+					}
+				}
+				return sent, false, nil
+			}()
+			if chargeErr {
+				return nil, err
+			}
 			if err != nil {
 				return nil, messageForwardErr(err)
 			}
@@ -338,6 +362,19 @@ func (r *Router) onMessagesForwardMessages(ctx context.Context, req *tg.Messages
 		return tgForwardMessagesUpdates(res, req.RandomID, r.usersForMessageUpdates(ctx, userID, res.SenderMessages), r.chatsForMessageUpdates(ctx, userID, res.SenderMessages)), nil
 	}
 	return nil, peerIDInvalidErr()
+}
+
+// forwardPaidRequirement returns the total paid charge for a private forward
+// batch (0 for channels and free peers). Floodskip stays unsupported, premium
+// gating is enforced through the shared requirement check.
+func (r *Router) forwardPaidRequirement(ctx context.Context, userID int64, toPeer domain.Peer, allowPaidStars int64, allowPaidFloodskip bool, count int) (int64, error) {
+	if toPeer.Type != domain.PeerTypeUser {
+		return 0, nil
+	}
+	if allowPaidFloodskip {
+		return 0, paymentUnsupportedErr()
+	}
+	return r.privatePaidRequirement(ctx, userID, toPeer.ID, allowPaidStars, count)
 }
 
 func (r *Router) forwardMessagesToMonoforum(

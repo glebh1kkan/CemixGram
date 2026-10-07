@@ -13,10 +13,11 @@ import (
 // stored level through userFull's existing rating fields so official clients can
 // render it without a client patch.
 const (
-	// MaxAccountRatingLevel bounds the local gramsrv level.
-	MaxAccountRatingLevel = 50
-	// accountRatingLevelUnit is the score required for level 1. Thresholds grow
-	// quadratically from it: level n needs accountRatingLevelUnit * n^2.
+	// MaxAccountRatingLevel bounds the local cemixgram level.
+	MaxAccountRatingLevel = 99
+	// accountRatingLevelUnit is the score step. Level 1 needs nothing (every
+	// account starts at 1); thresholds grow quadratically from there: level n
+	// needs accountRatingLevelUnit * (n-1)^2.
 	accountRatingLevelUnit = 100
 	// MaxAccountRatingReasonLength matches the event ledger CHECK on reason.
 	MaxAccountRatingReasonLength = 512
@@ -264,27 +265,27 @@ func ComputeAccountRating(signals AccountRatingSignals, weights AccountRatingWei
 }
 
 // AccountRatingLevelThreshold returns the score needed to reach the given level.
-// Level 0 needs nothing; growth is quadratic so early levels arrive quickly and
-// later ones stay meaningful.
+// Level 1 needs nothing (fresh accounts start at 1); growth is quadratic so
+// early levels arrive quickly and later ones stay meaningful.
 func AccountRatingLevelThreshold(level int) int64 {
-	if level <= 0 {
+	if level <= 1 {
 		return 0
 	}
 	if level > MaxAccountRatingLevel {
 		level = MaxAccountRatingLevel
 	}
-	n := int64(level)
+	n := int64(level - 1)
 	return accountRatingLevelUnit * n * n
 }
 
 // AccountRatingLevelForStars maps a score onto the level and the surrounding
-// thresholds. hasNext is false at MaxAccountRatingLevel.
+// thresholds. Minimum level is 1; hasNext is false at MaxAccountRatingLevel.
 func AccountRatingLevelForStars(stars int64) (level int, currentLevelStars int64, nextLevelStars int64, hasNext bool) {
 	if stars < 0 {
 		stars = 0
 	}
-	level = 0
-	for candidate := 1; candidate <= MaxAccountRatingLevel; candidate++ {
+	level = 1
+	for candidate := 2; candidate <= MaxAccountRatingLevel; candidate++ {
 		if stars < AccountRatingLevelThreshold(candidate) {
 			break
 		}
