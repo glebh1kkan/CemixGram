@@ -47,3 +47,6 @@ tmp/
 # and the operator Telegram session (secret, never commit).
 /seed-src/
 /.session/
+
+# apks are built artifacts, distributed separately
+*.apk

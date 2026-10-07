@@ -7,7 +7,7 @@ func TestUserVisibleTextRebrandsWordsAndOfficialHosts(t *testing.T) {
 		"Telegram telegram TELEGRAM Telegram-like https://translations.telegram.org/en t.me/example desktop.telegram.org",
 		"https://chat.example/root/",
 	)
-	want := "CoachGram CoachGram CoachGram CoachGram-like https://chat.example/root/en chat.example/example chat.example"
+	want := "CemixGram CemixGram CemixGram CemixGram-like https://chat.example/root/en chat.example/example chat.example"
 	if got != want {
 		t.Fatalf("UserVisibleText() = %q, want %q", got, want)
 	}
@@ -27,9 +27,9 @@ func TestUserVisibleTextPreservesTechnicalIdentifiers(t *testing.T) {
 
 func TestUserVisibleTextRebrandsBareOfficialHostsWithoutTouchingDottedIdentifiers(t *testing.T) {
 	for input, want := range map[string]string{
-		"telegram.org":           "coachgram.net",
-		"desktop.telegram.org":   "coachgram.net",
-		"t.me/example":           "coachgram.net/example",
+		"telegram.org":           "cemixgram.net",
+		"desktop.telegram.org":   "cemixgram.net",
+		"t.me/example":           "cemixgram.net/example",
 		"org.telegram.messenger": "org.telegram.messenger",
 	} {
 		if got := UserVisibleText(input, ""); got != want {
@@ -40,7 +40,7 @@ func TestUserVisibleTextRebrandsBareOfficialHostsWithoutTouchingDottedIdentifier
 
 func TestUserVisibleTextRebrandsLocalizedProductNames(t *testing.T) {
 	got := UserVisibleText("Телеграмом تيليجرام تلگرام 텔레그램 טלגרם", "")
-	if want := "CoachGram CoachGram CoachGram CoachGram CoachGram"; got != want {
+	if want := "CemixGram CemixGram CemixGram CemixGram CemixGram"; got != want {
 		t.Fatalf("UserVisibleText() = %q, want %q", got, want)
 	}
 }

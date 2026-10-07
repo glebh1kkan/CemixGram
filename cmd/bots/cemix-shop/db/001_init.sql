@@ -1,0 +1,24 @@
+CREATE TABLE IF NOT EXISTS links (
+  phone TEXT PRIMARY KEY,
+  tg_id TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS deliveries (
+  delivery_id TEXT PRIMARY KEY,
+  phone TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS grants (
+  id BIGSERIAL PRIMARY KEY,
+  tg_id TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  fg_user_id BIGINT NOT NULL,
+  tg_stars INTEGER NOT NULL,
+  fg_stars BIGINT NOT NULL,
+  charge_id TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS grants_tg_id_idx ON grants (tg_id);

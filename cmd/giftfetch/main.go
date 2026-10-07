@@ -884,6 +884,32 @@ func isRetryable(err error) bool {
 		strings.Contains(msg, "connection reset by peer")
 }
 
+func floodWaitSeconds(err error) int {
+	if err == nil {
+		return 0
+	}
+	msg := err.Error()
+	idx := strings.Index(msg, "FLOOD_WAIT")
+	if idx < 0 {
+		return 0
+	}
+	rest := msg[idx+len("FLOOD_WAIT"):]
+	digits := ""
+	for _, r := range rest {
+		if r >= '0' && r <= '9' {
+			digits += string(r)
+		} else if digits != "" {
+			break
+		}
+	}
+	if digits == "" {
+		return 0
+	}
+	var seconds int
+	_, _ = fmt.Sscanf(digits, "%d", &seconds)
+	return seconds
+}
+
 func retryOnTimeout(ctx context.Context, desc string, op func() ([]byte, error)) ([]byte, error) {
 	const maxRetries = 6
 	var lastErr error
@@ -897,6 +923,11 @@ func retryOnTimeout(ctx context.Context, desc string, op func() ([]byte, error))
 			return nil, err
 		}
 		backoff := time.Duration(attempt*2) * time.Second
+		// Telegram tells us exactly how long to wait — honor it plus a margin,
+		// otherwise every retry re-triggers and extends the flood window.
+		if wait := floodWaitSeconds(err); wait > 0 {
+			backoff = time.Duration(wait)*time.Second + floodWaitMargin
+		}
 		fmt.Printf("[retry %d/%d] %s: %v (waiting %v)\n", attempt, maxRetries, desc, err, backoff)
 		select {
 		case <-ctx.Done():

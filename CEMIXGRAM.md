@@ -1,6 +1,6 @@
-# CoachGram — self-hosted Telegram-compatible server (gramsrv monolith fork)
+# CemixGram — self-hosted Telegram-compatible server (gramsrv monolith fork)
 
-Fork of `gramsrv` branch `main` (monolith), user-visible identity rebranded to CoachGram.
+Fork of `gramsrv` branch `main` (monolith), user-visible identity rebranded to CemixGram.
 Go module and env prefix stay `telesrv` / `TELESRV_*` on purpose (see AGENTS.md:
 protocol identifiers, client detection tokens, metrics, database objects and module paths are not renamed).
 
@@ -11,20 +11,20 @@ protocol identifiers, client detection tokens, metrics, database objects and mod
 | MTProto | `0.0.0.0:2398`, advertise `150.241.70.48:2398`, DC 2 |
 | public links / healthz | `127.0.0.1:2401` |
 | admin API | `127.0.0.1:2599` |
-| APK | `CoachGram.apk` (org.coachgram.android, Telegram icon, no server select) |
+| APK | `CemixGram.apk` (org.cemixgram.android, Telegram icon, no server select) |
 
 ## Rebrand deltas vs upstream
 
-- `internal/branding`: CoachGram defaults.
-- `internal/links`: `https://coachgram.net`, `https://weba.coachgram.net`, scheme `coachgram`.
-- `internal/config`: passkey RP `coachgram.net`.
+- `internal/branding`: CemixGram defaults.
+- `internal/links`: `https://cemixgram.net`, `https://weba.cemixgram.net`, scheme `cemixgram`.
+- `internal/config`: passkey RP `cemixgram.net`.
 - `internal/rpc/aicompose_webpage.go`: host allowlist extended.
 
-## Android client (CoachGram-android)
+## Android client (CemixGram-android)
 
 - single server `150.241.70.48:2398` baked in (+ server RSA key), DC 2
 - no server-selection UI: straight to LoginActivity, server auto-bound
-- package `org.coachgram.android`, Telegram plane icon + intro art
+- package `org.cemixgram.android`, Telegram plane icon + intro art
 - reactions refresh without hourly gate
 
 ## Seeds

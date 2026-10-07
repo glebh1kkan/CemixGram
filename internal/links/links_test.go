@@ -12,8 +12,8 @@ func TestNormalizeBaseURL(t *testing.T) {
 		raw  string
 		want string
 	}{
-		{name: "default", raw: "", want: "https://coachgram.net"},
-		{name: "host only", raw: "coachgram.net/", want: "https://coachgram.net"},
+		{name: "default", raw: "", want: "https://cemixgram.net"},
+		{name: "host only", raw: "cemixgram.net/", want: "https://cemixgram.net"},
 		{name: "local http", raw: "http://127.0.0.1:2401/", want: "http://127.0.0.1:2401"},
 	}
 	for _, tt := range tests {
@@ -32,7 +32,7 @@ func TestValidateBaseURL(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "default", raw: "", want: "https://coachgram.net"},
+		{name: "default", raw: "", want: "https://cemixgram.net"},
 		{name: "host and path", raw: "links.example.test/root/", want: "https://links.example.test/root"},
 		{name: "local HTTP", raw: "http://127.0.0.1:2401/", want: "http://127.0.0.1:2401"},
 		{name: "missing host", raw: "https://", wantErr: true},
@@ -67,7 +67,7 @@ func TestValidateAppScheme(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "default", raw: "", want: "coachgram"},
+		{name: "default", raw: "", want: "cemixgram"},
 		{name: "normalized", raw: "  My-App+Dev  ", want: "my-app+dev"},
 		{name: "starts with digit", raw: "1app", wantErr: true},
 		{name: "colon", raw: "myapp:", wantErr: true},
@@ -119,18 +119,18 @@ func TestValidateAppLinkBase(t *testing.T) {
 }
 
 func TestAppLinkBuilderPreservesLegacyAndSupportsHostBase(t *testing.T) {
-	legacy, err := NewAppLinkBuilder("coachgram", "")
+	legacy, err := NewAppLinkBuilder("cemixgram", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := legacy.Build("oauth", url.Values{"token": {"a+b"}}), "coachgram://oauth?token=a%2Bb"; got != want {
+	if got, want := legacy.Build("oauth", url.Values{"token": {"a+b"}}), "cemixgram://oauth?token=a%2Bb"; got != want {
 		t.Fatalf("legacy OAuth = %q, want %q", got, want)
 	}
-	if got, want := legacy.BuildUsername("Alice", url.Values{"start": {"hello"}}), "coachgram://resolve?domain=Alice&start=hello"; got != want {
+	if got, want := legacy.BuildUsername("Alice", url.Values{"start": {"hello"}}), "cemixgram://resolve?domain=Alice&start=hello"; got != want {
 		t.Fatalf("legacy username = %q, want %q", got, want)
 	}
 
-	hosted, err := NewAppLinkBuilder("coachgram", "owpg://links.example.test")
+	hosted, err := NewAppLinkBuilder("cemixgram", "owpg://links.example.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestAppLinkBuilderPreservesLegacyAndSupportsHostBase(t *testing.T) {
 		raw  string
 		want bool
 	}{
-		{raw: "coachgram://oauth?token=x", want: true},
+		{raw: "cemixgram://oauth?token=x", want: true},
 		{raw: "owpg://links.example.test/oauth?token=x", want: true},
 		{raw: "owpg://other.example.test/oauth?token=x", want: false},
 		{raw: "owpg://links.example.test/oauth/extra?token=x", want: false},
@@ -162,7 +162,7 @@ func TestAppLinkBuilderPreservesLegacyAndSupportsHostBase(t *testing.T) {
 }
 
 func TestAppLinkBuilderAcceptsEntityURL(t *testing.T) {
-	hosted, err := NewAppLinkBuilder("coachgram", "owpg://links.example.test")
+	hosted, err := NewAppLinkBuilder("cemixgram", "owpg://links.example.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,15 +171,15 @@ func TestAppLinkBuilderAcceptsEntityURL(t *testing.T) {
 		raw  string
 		want bool
 	}{
-		{name: "legacy route", raw: "coachgram://resolve?domain=Alice", want: true},
-		{name: "legacy case insensitive", raw: "COACHGRAM://resolve?domain=Alice", want: true},
+		{name: "legacy route", raw: "cemixgram://resolve?domain=Alice", want: true},
+		{name: "legacy case insensitive", raw: "CEMIXGRAM://resolve?domain=Alice", want: true},
 		{name: "configured host base", raw: "owpg://links.example.test/Alice", want: true},
 		{name: "configured host case insensitive", raw: "OWPG://LINKS.EXAMPLE.TEST/Alice", want: true},
 		{name: "same scheme wrong host", raw: "owpg://other.example.test/Alice", want: false},
-		{name: "credentials", raw: "coachgram://user@resolve/path", want: false},
-		{name: "port", raw: "coachgram://resolve:443/path", want: false},
+		{name: "credentials", raw: "cemixgram://user@resolve/path", want: false},
+		{name: "port", raw: "cemixgram://resolve:443/path", want: false},
 		{name: "unconfigured scheme", raw: "other://resolve", want: false},
-		{name: "missing route host", raw: "coachgram://", want: false},
+		{name: "missing route host", raw: "cemixgram://", want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := hosted.AcceptsEntityURL(tc.raw); got != tc.want {
@@ -229,7 +229,7 @@ func TestCleanAndValidateChatlistSlug(t *testing.T) {
 	}{
 		{name: "raw", raw: "abc.DEF-12", clean: "abc.DEF-12", valid: true},
 		{name: "public url", raw: "http://127.0.0.1:2401/addlist/abc-12?x=1", clean: "abc-12", valid: true},
-		{name: "app url", raw: "coachgram://addlist?slug=abc_12", clean: "abc_12", valid: true},
+		{name: "app url", raw: "cemixgram://addlist?slug=abc_12", clean: "abc_12", valid: true},
 		{name: "bad char", raw: "abc/../bad!", clean: "bad!", valid: false},
 	}
 	for _, tt := range tests {

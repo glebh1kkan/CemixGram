@@ -102,7 +102,7 @@ func aiComposeStyleHostAllowed(host, publicHost string) bool {
 		return true
 	}
 	switch host {
-	case "t.me", "telegram.me", "telesrv.net", "flexgram.net", "coachgram.net", "localhost", "127.0.0.1":
+	case "t.me", "telegram.me", "telesrv.net", "flexgram.net", "cemixgram.net", "localhost", "127.0.0.1":
 		return true
 	default:
 		return false

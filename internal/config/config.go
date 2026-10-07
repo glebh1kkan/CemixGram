@@ -1109,7 +1109,7 @@ func Load() (Config, error) {
 		PremiumBotUsername:               premiumBotUsername,
 		PremiumBotUserID:                 premiumBotUserID,
 		PremiumPlans:                     premiumPlans,
-		PasskeyRPID:                      envOr("TELESRV_PASSKEY_RP_ID", "coachgram.net"),
+		PasskeyRPID:                      envOr("TELESRV_PASSKEY_RP_ID", "cemixgram.net"),
 		PasskeyAllowedOrigins:            envListOr("TELESRV_PASSKEY_ALLOWED_ORIGINS", nil),
 		StarsStartingGrant:               int64(envIntOr("TELESRV_STARS_STARTING_GRANT", 1000)),
 		PremiumSweepInterval:             envDurationOr("TELESRV_PREMIUM_SWEEP_INTERVAL", time.Minute),

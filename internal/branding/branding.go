@@ -35,16 +35,16 @@ type Config struct {
 
 var (
 	defaultConfig = Config{
-		ProductName:     "CoachGram",
-		ProductUsername: "coachgram",
-		DesktopAppName:  "CoachGram Desktop",
-		AndroidAppName:  "CoachGram Android",
-		IOSAppName:      "CoachGram iOS",
-		MacOSAppName:    "CoachGram macOS",
-		WebAAppName:     "CoachGram Web A",
-		WebKAppName:     "CoachGram Web K",
-		PremiumName:     "CoachGram Premium",
-		StarsName:       "CoachGram Stars",
+		ProductName:     "CemixGram",
+		ProductUsername: "cemixgram",
+		DesktopAppName:  "CemixGram Desktop",
+		AndroidAppName:  "CemixGram Android",
+		IOSAppName:      "CemixGram iOS",
+		MacOSAppName:    "CemixGram macOS",
+		WebAAppName:     "CemixGram Web A",
+		WebKAppName:     "CemixGram Web K",
+		PremiumName:     "CemixGram Premium",
+		StarsName:       "CemixGram Stars",
 		PublicBaseURL:   links.DefaultPublicBaseURL,
 	}
 	configured atomic.Pointer[Config]

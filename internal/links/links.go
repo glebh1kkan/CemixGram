@@ -7,9 +7,9 @@ import (
 )
 
 const (
-	DefaultPublicBaseURL = "https://coachgram.net"
-	DefaultWebBaseURL    = "https://weba.coachgram.net"
-	DefaultAppScheme     = "coachgram"
+	DefaultPublicBaseURL = "https://cemixgram.net"
+	DefaultWebBaseURL    = "https://weba.cemixgram.net"
+	DefaultAppScheme     = "cemixgram"
 )
 const MaxChatlistSlugBytes = 128
 
@@ -256,7 +256,7 @@ func Build(baseURL, path string, query url.Values) string {
 func Host(baseURL string) string {
 	baseURL, err := ValidateBaseURL(baseURL)
 	if err != nil {
-		return "coachgram.net"
+		return "cemixgram.net"
 	}
 	parsed, _ := url.Parse(baseURL)
 	if host := parsed.Hostname(); host != "" {

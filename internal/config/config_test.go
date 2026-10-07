@@ -21,23 +21,23 @@ func TestLoadDefaultsAdvertiseIPToLoopback(t *testing.T) {
 	if cfg.AdvertiseIP != "127.0.0.1" {
 		t.Fatalf("AdvertiseIP = %q, want loopback default", cfg.AdvertiseIP)
 	}
-	if cfg.PublicBaseURL != "https://coachgram.net" {
-		t.Fatalf("PublicBaseURL = %q, want https://coachgram.net", cfg.PublicBaseURL)
+	if cfg.PublicBaseURL != "https://cemixgram.net" {
+		t.Fatalf("PublicBaseURL = %q, want https://cemixgram.net", cfg.PublicBaseURL)
 	}
-	if cfg.PublicAppScheme != "coachgram" {
-		t.Fatalf("PublicAppScheme = %q, want coachgram", cfg.PublicAppScheme)
+	if cfg.PublicAppScheme != "cemixgram" {
+		t.Fatalf("PublicAppScheme = %q, want cemixgram", cfg.PublicAppScheme)
 	}
 	if cfg.PublicAppLinkBase != "" {
 		t.Fatalf("PublicAppLinkBase = %q, want disabled", cfg.PublicAppLinkBase)
 	}
-	if cfg.PublicWebBaseURL != "https://weba.coachgram.net" {
-		t.Fatalf("PublicWebBaseURL = %q, want https://weba.coachgram.net", cfg.PublicWebBaseURL)
+	if cfg.PublicWebBaseURL != "https://weba.cemixgram.net" {
+		t.Fatalf("PublicWebBaseURL = %q, want https://weba.cemixgram.net", cfg.PublicWebBaseURL)
 	}
-	if cfg.PublicAppName != "CoachGram" {
-		t.Fatalf("PublicAppName = %q, want CoachGram", cfg.PublicAppName)
+	if cfg.PublicAppName != "CemixGram" {
+		t.Fatalf("PublicAppName = %q, want CemixGram", cfg.PublicAppName)
 	}
-	if cfg.Branding.ProductName != "CoachGram" || cfg.Branding.ProductUsername != "coachgram" ||
-		cfg.Branding.DesktopAppName != "CoachGram Desktop" || cfg.Branding.StarsName != "CoachGram Stars" ||
+	if cfg.Branding.ProductName != "CemixGram" || cfg.Branding.ProductUsername != "cemixgram" ||
+		cfg.Branding.DesktopAppName != "CemixGram Desktop" || cfg.Branding.StarsName != "CemixGram Stars" ||
 		cfg.Branding.PublicBaseURL != cfg.PublicBaseURL {
 		t.Fatalf("Branding = %+v", cfg.Branding)
 	}
