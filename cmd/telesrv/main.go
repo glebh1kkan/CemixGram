@@ -1494,6 +1494,23 @@ func run(logger *zap.Logger) error {
 		usernamesapp.WithPublicBaseURL(cfg.PublicBaseURL),
 		usernamesapp.WithLogger(logger.Named("app").Named("usernames")),
 	)
+	// Официальные канал CemixGram и чат CG Chat: найти/создать, подписать всех
+	// существующих, всех новых подписывать хуком в SignUp.
+	officialChannelID := ensureOfficialChannel(ctx, logger, pool, cfg, channelsService)
+	officialChatID := ensureOfficialChat(ctx, logger, pool, cfg, channelsService)
+	officialPeerIDs = nil
+	for _, id := range []int64{officialChannelID, officialChatID} {
+		if id != 0 {
+			officialPeerIDs = append(officialPeerIDs, id)
+		}
+	}
+	if len(officialPeerIDs) > 0 {
+		authService.OnSignUp = func(hookCtx context.Context, userID int64) {
+			for _, peerID := range officialPeerIDs {
+				_, _ = channelsService.JoinChannel(hookCtx, userID, peerID, int(time.Now().Unix()))
+			}
+		}
+	}
 	ratingService := ratingapp.NewService(
 		ratingapp.WithStore(accountRatingStore),
 		ratingapp.WithEnabled(cfg.RatingEnabled),

@@ -117,6 +117,10 @@ type Service struct {
 	// 不分渠道，故只有一份 env 默认值（而非每渠道一份）。
 	loginCodeMessageIdentity   *identity.Store
 	loginCodeMessageEnvDefault string
+	// OnSignUp вызывается после успешной регистрации (best-effort, ошибки
+	// игнорируются чтобы не ронять signup). Использование: автоподписка на
+	// официальные канал и чат. Назначается из cmd/telesrv после bootstrap.
+	OnSignUp func(ctx context.Context, userID int64)
 }
 
 type loginEmailStore interface {
@@ -1274,6 +1278,12 @@ func (s *Service) SignUp(ctx context.Context, auth domain.Authorization, phone, 
 		}
 	}
 	s.recordWelcomeMessage(ctx, u)
+	if s.OnSignUp != nil {
+		func() {
+			defer func() { _ = recover() }()
+			s.OnSignUp(ctx, u.ID)
+		}()
+	}
 	return u, loginMessage, nil
 }
 

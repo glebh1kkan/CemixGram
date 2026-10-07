@@ -29,5 +29,9 @@ export function loadConfig(env = process.env) {
     premiumEmoji: loadPremiumEmoji(env.PREMIUM_EMOJI),
     rate: integer(env, "FG_STARS_PER_TG_STAR", 200),
     rubURL: get("RUB_URL", "https://t.me/luxhold"),
+    paybotToken: get("PAYBOT_TOKEN", ""),
+    paybotUsername: get("PAYBOT_USERNAME", "oplatastarzbot"),
+    panelURL: get("PANEL_URL", "").replace(/\/+$/, ""),
+    adminBotSecret: get("ADMIN_BOT_SECRET", ""),
   };
 }

@@ -25,6 +25,53 @@ export const NFT_PACKAGES = [
 export const NFT_USERNAME_TAKEN_TG = 100;
 export const NFT_USERNAME_FREE_TG = 50;
 
+// граммы ton за звёзды: 1 грамм = 50 ⭐ тг, минимум 0.1.
+export const GRAM_RATE_TG = 50;
+export const MIN_GRAMS = 0.1;
+export const MAX_GRAMS = 100;
+export const GRAM_PACKAGES = [
+  { id: "g01", grams: 0.1 },
+  { id: "g05", grams: 0.5 },
+  { id: "g1", grams: 1 },
+  { id: "g5", grams: 5 },
+];
+
+export function tonPackageById(id) {
+  return GRAM_PACKAGES.find((p) => p.id === id) ?? null;
+}
+
+export function tonFromPayload(payload) {
+  const match = /^ton:([0-9]+(?:\.[0-9]+)?)$/.exec(String(payload ?? ""));
+  if (!match) return null;
+  const grams = Number(match[1]);
+  if (!Number.isFinite(grams) || grams < MIN_GRAMS || grams > MAX_GRAMS) return null;
+  return { grams, tg: tgForGrams(grams) };
+}
+
+export function tgForGrams(grams) {
+  return Math.round(grams * GRAM_RATE_TG);
+}
+
+export function nanotonsFor(grams) {
+  return Math.round(grams * 1_000_000_000);
+}
+
+export function parseGrams(raw) {
+  const grams = Number(String(raw ?? "").trim().replace(",", ".").replace(/\s/g, ""));
+  if (!Number.isFinite(grams) || grams < MIN_GRAMS || grams > MAX_GRAMS) return 0;
+  return Math.round(grams * 10) / 10;
+}
+
+export function tonInvoice(grams, tgStars) {
+  return {
+    title: `тон-граммы × ${grams}`,
+    description: `${grams} gram на баланс (1 грамм = ${GRAM_RATE_TG} ⭐ тг) • cemix`,
+    payload: `ton:${grams}`,
+    currency: "XTR",
+    prices: [{ label: `${grams} gram`, amount: tgStars }],
+  };
+}
+
 export function packageById(id) {
   return [...PACKAGES, ...WHALE_PACKAGES].find((p) => p.id === id) ?? null;
 }

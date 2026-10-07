@@ -92,3 +92,20 @@ describe("инвойс", () => {
     assert.equal(invoice.prices[0].amount, 10);
   });
 });
+
+describe("граммы", () => {
+  it("считает курс 1 грамм = 50 звёзд", async () => {
+    const { tgForGrams, nanotonsFor, parseGrams, tonFromPayload, tonInvoice } = await import("../src/shop.js");
+    assert.equal(tgForGrams(0.1), 5);
+    assert.equal(tgForGrams(1), 50);
+    assert.equal(nanotonsFor(0.1), 100000000);
+    assert.equal(parseGrams("2,5"), 2.5);
+    assert.equal(parseGrams("0.05"), 0);
+    assert.equal(parseGrams("много"), 0);
+    assert.deepEqual(tonFromPayload("ton:0.5"), { grams: 0.5, tg: 25 });
+    assert.equal(tonFromPayload("ton:0.05"), null);
+    const invoice = tonInvoice(1, 50);
+    assert.equal(invoice.payload, "ton:1");
+    assert.equal(invoice.prices[0].amount, 50);
+  });
+});

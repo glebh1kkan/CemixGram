@@ -80,6 +80,10 @@ type uiConfig struct {
 	Password      string
 	Token         string
 	SessionKey    []byte
+	// BotSecret authorizes the Telegram bot to mint one-time panel logins
+	// (POST /api/internal/bot-login-token). When set, the password/token
+	// form login may stay empty and the panel is bot-gated.
+	BotSecret     string
 	// DiskStatsPath points the dashboard host-disk sampler at the local path
 	// that matters for the selected blob backend: permanent localfs storage or
 	// the S3 upload spool.
@@ -139,8 +143,8 @@ func loadConfig() (uiConfig, error) {
 		adminAPIAddr = defaultAdminAPIAddr
 	}
 
-	if appCfg.AdminUIPassword == "" && appCfg.AdminUIToken == "" {
-		return uiConfig{}, fmt.Errorf("TELESRV_ADMIN_UI_PASSWORD or TELESRV_ADMIN_UI_TOKEN is required")
+	if appCfg.AdminUIPassword == "" && appCfg.AdminUIToken == "" && os.Getenv("TELESRV_ADMIN_BOT_SECRET") == "" {
+		return uiConfig{}, fmt.Errorf("TELESRV_ADMIN_UI_PASSWORD or TELESRV_ADMIN_UI_TOKEN is required (or TELESRV_ADMIN_BOT_SECRET for bot-only login)")
 	}
 	if strings.TrimSpace(appCfg.AdminAPIToken) == "" {
 		return uiConfig{}, fmt.Errorf("TELESRV_ADMIN_API_TOKEN is required for admin write actions")
@@ -167,6 +171,7 @@ func loadConfig() (uiConfig, error) {
 		Password:                   appCfg.AdminUIPassword,
 		Token:                      appCfg.AdminUIToken,
 		SessionKey:                 sum[:],
+		BotSecret:                  strings.TrimSpace(os.Getenv("TELESRV_ADMIN_BOT_SECRET")),
 		DiskStatsPath:              dashboardDiskPath(appCfg),
 		Permissions:                appCfg.AdminUIPermissions,
 		IdentityDir:                appCfg.IdentityDir,

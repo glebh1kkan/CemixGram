@@ -64,3 +64,25 @@ describe("связь номер-аккаунт 1 к 1", () => {
     assert.equal(top[0].total, 160);
   });
 });
+
+describe("начисление грамм", () => {
+  it("кредитует ton в ledger сервера", async () => {
+    const pg = (await import("pg")).default;
+    const main = new pg.Pool({ connectionString: "postgres://cemixgram:coachgram@127.0.0.1:5432/cemixgram_main" });
+    const { createStore } = await import("../src/store.js");
+    const store = createStore(process.env.TEST_DATABASE_URL, "postgres://cemixgram:coachgram@127.0.0.1:5432/cemixgram_main");
+    const uid = 999999001;
+    await main.query("DELETE FROM ton_transactions WHERE user_id = $1", [uid]);
+    await main.query("DELETE FROM ton_balances WHERE user_id = $1", [uid]);
+    const ok = await store.creditTon({ tgID: 111, fgUserID: uid, grams: 0.5, nanoton: 500000000, tgStars: 25, chargeID: "ton_1" });
+    assert.equal(ok, true);
+    const balance = await main.query("SELECT balance_nanoton FROM ton_balances WHERE user_id = $1", [uid]);
+    assert.equal(Number(balance.rows[0].balance_nanoton), 500000000);
+    assert.equal(await store.tonSeen("ton_1"), true);
+    const again = await store.creditTon({ tgID: 111, fgUserID: uid, grams: 0.5, nanoton: 500000000, tgStars: 25, chargeID: "ton_1" });
+    assert.equal(again, false);
+    await main.query("DELETE FROM ton_transactions WHERE user_id = $1", [uid]);
+    await main.query("DELETE FROM ton_balances WHERE user_id = $1", [uid]);
+    await main.end();
+  });
+});

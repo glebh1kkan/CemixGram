@@ -2,19 +2,21 @@ import { Bot, InlineKeyboard } from "grammy";
 import { issuePlusOne, issuePlus888, randomCollectible } from "./numbers.js";
 import { withPremiumEmojis, extractPremiumEmojis } from "./premium.js";
 import {
-  MAX_CUSTOM_TG, MIN_CUSTOM_TG, NFT_PACKAGES, NFT_USERNAME_FREE_TG, NFT_USERNAME_TAKEN_TG,
+  MAX_CUSTOM_TG, MIN_CUSTOM_TG, MIN_GRAMS, MAX_GRAMS, GRAM_PACKAGES, GRAM_RATE_TG, NFT_PACKAGES, NFT_USERNAME_FREE_TG, NFT_USERNAME_TAKEN_TG,
   PACKAGES, WHALE_PACKAGES, fgStarsFor, invoiceFor, customInvoice, nftInvoice,
   nftPackFromPayload, nftPackageById, packageById, parseCustomAmount, parseUsername,
-  tgAmountFromPayload, usernameFromPayload, usernameInvoice,
+  tgAmountFromPayload, tonFromPayload, tonInvoice, parseGrams, tgForGrams, nanotonsFor, usernameFromPayload, usernameInvoice,
 } from "./shop.js";
 
 const DIV = "──────────────";
+export { DIV };
 
 export function mainMenu(isOwner = false) {
   const menu = new InlineKeyboard()
     .text("🎲 мой номер", "get_number").row()
     .text("⭐ звёзды", "menu_shop").text("🐳 мажорки", "menu_whales").row()
     .text("🔢 нфт номера", "menu_nft").text("🔗 нфт юзернейм", "menu_username").row()
+    .text("🪙 граммы", "menu_ton").row()
     .text("💰 баланс", "menu_balance");
   if (isOwner) {
     menu.row().text("📊 стата", "menu_stats").text("🏆 топ", "menu_top");
@@ -33,6 +35,16 @@ function shopKeyboard(rate, rubURL, packs) {
   }
   keyboard.text("✏️ своя сумма", "custom_amount").row();
   keyboard.url("₽ рублями", rubURL).text("◀️ меню", "menu_main");
+  return keyboard;
+}
+
+export function tonMenu() {
+  const keyboard = new InlineKeyboard();
+  for (const pack of GRAM_PACKAGES) {
+    keyboard.text(`🪙 ${pack.grams} gram → ${tgForGrams(pack.grams)} ⭐`, `buy_ton_${pack.grams}`).row();
+  }
+  keyboard.text("✏️ своя сумма", "custom_grams").row();
+  keyboard.text("◀️ меню", "menu_main");
   return keyboard;
 }
 
@@ -58,13 +70,14 @@ export async function showText(ctx, text, extra = {}) {
 
 const awaitingAmount = new Map();
 const awaitingUsername = new Map();
+const awaitingGrams = new Map();
 
 // отправка с премиум-эмодзи: токены {name} меняются на эмодзи из карты.
 function richText(config, text) {
   return withPremiumEmojis(text, config.premiumEmoji ?? {});
 }
 
-async function say(ctx, config, text, extra = {}) {
+export async function say(ctx, config, text, extra = {}) {
   const styled = richText(config, text);
   const merged = { ...extra };
   if (styled.entities.length > 0) {
@@ -152,6 +165,16 @@ export function createBot({ config, store, cemixgram }) {
     await say(ctx, config, `{link} нфт юзернейм\n${DIV}\nнапиши имя (латиница, от 5 символов)\n\nзанятый — выкуп 100 {star}\nсвободный — 50 {star} • cemix`);
   });
 
+  bot.callbackQuery("menu_ton", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const phone = await store.phoneByChat(ctx.from.id);
+    if (!phone) {
+      await say(ctx, config, "👆 сначала возьми номер — /start");
+      return;
+    }
+    await say(ctx, config, `{coin} граммы ton\n${DIV}\n1 грамм = ${GRAM_RATE_TG} {star} тг, от ${MIN_GRAMS} • cemix`, { reply_markup: tonMenu() });
+  });
+
   bot.callbackQuery("menu_balance", async (ctx) => {
     await ctx.answerCallbackQuery();
     await sendBalance(ctx, config, store);
@@ -203,6 +226,32 @@ export function createBot({ config, store, cemixgram }) {
     await sendTop(ctx, config, bot, store);
   });
 
+  // вход в админку только через бота и только овнеру: минтим одноразовый токен.
+  bot.command("apanel", async (ctx) => {
+    if (!isOwner(ctx, config)) {
+      await say(ctx, config, "⛔ только для админа • cemix");
+      return;
+    }
+    if (!config.adminBotSecret || !config.panelURL) {
+      await say(ctx, config, "😕 вход через бота не настроен • cemix");
+      return;
+    }
+    try {
+      const response = await fetch(`${config.panelURL}/api/internal/bot-login-token`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ secret: config.adminBotSecret }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) throw new Error(`panel ${response.status}`);
+      const body = await response.json();
+      if (!body?.token) throw new Error("no token");
+      await say(ctx, config, `{key} вход в админку (живёт 5 минут, одноразовый) • cemix\n\n${config.panelURL}/auth/bot?token=${body.token}`);
+    } catch (error) {
+      await say(ctx, config, "😕 админка не отвечает — проверь позже • cemix");
+    }
+  });
+
   async function needAccount(ctx) {
     const phone = await store.phoneByChat(ctx.from.id);
     if (!phone) return 0;
@@ -219,7 +268,7 @@ export function createBot({ config, store, cemixgram }) {
       await ctx.answerCallbackQuery("📲 сначала войди в приложение • cemix");
       return;
     }
-    await sendInvoiceReply(ctx, invoiceFor(pack, config.rate));
+    await payThroughPaybot(ctx, config, `buy_${pack.id}`);
     await ctx.answerCallbackQuery();
   });
 
@@ -229,8 +278,32 @@ export function createBot({ config, store, cemixgram }) {
       await ctx.answerCallbackQuery("📲 сначала войди в приложение • cemix");
       return;
     }
-    await sendInvoiceReply(ctx, nftInvoice(nft, config.rate));
+    await payThroughPaybot(ctx, config, `buy_nft_${nft.id}`);
     await ctx.answerCallbackQuery();
+  });
+
+  bot.callbackQuery(/^buy_ton_([0-9]+(?:\.[0-9]+)?)$/, async (ctx) => {
+    const grams = parseGrams(ctx.match[1]);
+    if (!grams) {
+      await ctx.answerCallbackQuery("🤷 нет такого");
+      return;
+    }
+    if (!await needAccount(ctx)) {
+      await ctx.answerCallbackQuery("📲 сначала войди в приложение • cemix");
+      return;
+    }
+    await payThroughPaybot(ctx, config, `buy_ton_${grams}`);
+    await ctx.answerCallbackQuery();
+  });
+
+  bot.callbackQuery("custom_grams", async (ctx) => {
+    if (!await needAccount(ctx)) {
+      await ctx.answerCallbackQuery("📲 сначала войди в приложение • cemix");
+      return;
+    }
+    awaitingGrams.set(ctx.from.id, true);
+    await ctx.answerCallbackQuery();
+    await say(ctx, config, `✏️ сколько грамм? (от ${MIN_GRAMS} до ${MAX_GRAMS}) • cemix`);
   });
 
   bot.callbackQuery("custom_amount", async (ctx) => {
@@ -281,7 +354,21 @@ export function createBot({ config, store, cemixgram }) {
       const taken = await store.usernameTaken(name).catch(() => false);
       const price = taken ? NFT_USERNAME_TAKEN_TG : NFT_USERNAME_FREE_TG;
       await ctx.reply(taken ? `😬 @${name} занят — выкуп ${price} ⭐ • cemix` : `🎉 @${name} свободен — всего ${price} ⭐ • cemix`);
-      await sendInvoiceReply(ctx, usernameInvoice(name, price, config.rate));
+      await payThroughPaybot(ctx, config, `buy_user_${name}_${price}`);
+      return;
+    }
+    if (awaitingGrams.has(ctx.from.id)) {
+      const grams = parseGrams(ctx.message.text);
+      if (!grams) {
+        await ctx.reply(`🔢 нужно от ${MIN_GRAMS} до ${MAX_GRAMS} грамм`);
+        return;
+      }
+      awaitingGrams.delete(ctx.from.id);
+      if (!await needAccount(ctx)) {
+        await ctx.reply("📲 сначала войди в приложение • cemix");
+        return;
+      }
+      await payThroughPaybot(ctx, config, `buy_ton_${grams}`);
       return;
     }
     if (!awaitingAmount.has(ctx.from.id)) return;
@@ -295,7 +382,7 @@ export function createBot({ config, store, cemixgram }) {
       await ctx.reply("📲 сначала войди в приложение • cemix");
       return;
     }
-    await sendInvoiceReply(ctx, customInvoice(amount, config.rate));
+    await payThroughPaybot(ctx, config, `buy_custom_${amount}`);
   });
 
   bot.on("pre_checkout_query", async (ctx) => {
@@ -342,7 +429,18 @@ export function createBot({ config, store, cemixgram }) {
   return bot;
 }
 
-async function sendInvoiceReply(ctx, invoice) {
+// оплата идёт через отдельного платёжного бота (инвойсы xtr может
+// выставлять только тот бот, которому платят): кидаем диплинк.
+export async function payThroughPaybot(ctx, config, payload) {
+  const url = `https://t.me/${config.paybotUsername}?start=${payload}`;
+  await say(ctx, config, `{card} оплата тут • cemix`, {
+    reply_markup: {
+      inline_keyboard: [[{ text: "💳 платить", url }]],
+    },
+  });
+}
+
+export async function sendInvoiceReply(ctx, invoice) {
   try {
     await ctx.replyWithInvoice(
       invoice.title,
@@ -359,7 +457,7 @@ async function sendInvoiceReply(ctx, invoice) {
 
 // минт случайного свободного +888 после оплаты: dry_run проверяет,
 // боевой минт идёт с идемпотентным command_id по charge.
-async function sellNftNumber(ctx, { store, cemixgram, nft, fgUser, chargeID }) {
+export async function sellNftNumber(ctx, { store, cemixgram, nft, fgUser, chargeID }) {
   for (let i = 0; i < 10; i++) {
     const number = randomCollectible(nft.digits);
     const probe = await cemixgram.mintPhone(fgUser, number, nft.tg, `probe-${chargeID}-${i}`, true).catch(() => null);
@@ -373,8 +471,25 @@ async function sellNftNumber(ctx, { store, cemixgram, nft, fgUser, chargeID }) {
   await ctx.reply("💸 оплата прошла, а свободный номер не подобрался — напиши в поддержку");
 }
 
+// начисление грамм ton после оплаты: идемпотентно по charge.
+export async function sellTonGrams(ctx, { config, store, ton, fgUser, chargeID }) {
+  try {
+    const ok = await store.creditTon({
+      tgID: ctx.from.id, fgUserID: fgUser,
+      grams: ton.grams, nanoton: nanotonsFor(ton.grams), tgStars: ton.tg, chargeID,
+    });
+    if (!ok) {
+      await say(ctx, config, "{check} уже начислено • cemix");
+      return;
+    }
+    await say(ctx, config, `{party} +${ton.grams} gram на балансе • cemix`);
+  } catch (error) {
+    await say(ctx, config, "💸 оплата прошла, а граммы не начислены — напиши в поддержку • cemix");
+  }
+}
+
 // минт нфт юзернейма после оплаты: занятость перепроверяем прямо перед минтом.
-async function sellNftUsername(ctx, { store, cemixgram, name, tg, fgUser, chargeID }) {
+export async function sellNftUsername(ctx, { store, cemixgram, name, tg, fgUser, chargeID }) {
   const taken = await store.usernameTaken(name).catch(() => true);
   const price = taken ? NFT_USERNAME_TAKEN_TG : NFT_USERNAME_FREE_TG;
   if (price !== tg) {

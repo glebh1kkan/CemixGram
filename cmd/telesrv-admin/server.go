@@ -56,6 +56,8 @@ func newServer(cfg uiConfig, read *readStore, hostStats *hoststats.Poller) (*ser
 func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/login", s.handleAPILogin)
+	mux.HandleFunc("POST /api/internal/bot-login-token", s.handleBotLoginTokenAPI)
+	mux.HandleFunc("GET /auth/bot", s.handleBotLoginPage)
 	// Logout goes through the same gate as every other mutating route: a forced
 	// logout is a state change, and an invalid session is cleared by the gate
 	// itself, so nothing is stranded by protecting it.

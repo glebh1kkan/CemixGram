@@ -118,6 +118,13 @@ type Config struct {
 	PublicWebBaseURL string
 	// PublicAppName 是公开落地页展示的产品名，不参与协议路由。
 	PublicAppName string
+	// OfficialChannelTitle/Username/About — официальный канал: создаётся при
+	// старте (создатель 777000), все новые регистрации автоматически подписываются.
+	OfficialChannelTitle    string
+	OfficialChannelUsername string
+	OfficialChannelAbout    string
+	// OfficialChatTitle — официальная группа (megagroup): те же правила.
+	OfficialChatTitle string
 	// PublicLinkWebAddr 是公开链接落地页监听地址；为空关闭。
 	// 生产应只监听 loopback，并由 nginx 将 /<username>、/addstickers/、/addemoji/、
 	// /addlist/ 与 hash-only /appeal/ 路由反代到该地址。
@@ -898,6 +905,10 @@ func Load() (Config, error) {
 		PublicAppLinkBase:                     publicAppLinkBase,
 		PublicWebBaseURL:                      publicWebBaseURL,
 		PublicAppName:                         publicAppName,
+		OfficialChannelTitle:                envOr("TELESRV_OFFICIAL_CHANNEL_TITLE", "CemixGram"),
+		OfficialChannelUsername:             strings.ToLower(strings.TrimSpace(envOr("TELESRV_OFFICIAL_CHANNEL_USERNAME", "cemixgram_channel"))),
+		OfficialChannelAbout:                envOr("TELESRV_OFFICIAL_CHANNEL_ABOUT", "официальный канал cemixgram"),
+		OfficialChatTitle:                   envOr("TELESRV_OFFICIAL_CHAT_TITLE", "CG Chat"),
 		PublicLinkWebAddr:                     envAllowEmptyOr("TELESRV_PUBLIC_LINK_WEB_ADDR", ""),
 		AllowDevPayments:                      envBoolOr("TELESRV_ALLOW_DEV_PAYMENTS", false),
 		TelegramLoginEnabled:                  envBoolOr("TELESRV_TELEGRAM_LOGIN_ENABLE", false),

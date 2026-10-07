@@ -100,6 +100,58 @@ export function createStore(databaseURL, mainDatabaseURL = "") {
       return Number(result.rows[0].total);
     },
 
+    // начисление граммов ton напрямую в ledger сервера.
+    async creditTon({ tgID, fgUserID, grams, nanoton, tgStars, chargeID }) {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const seen = await client.query("SELECT 1 FROM ton_sales WHERE charge_id = $1", [chargeID]);
+        if (seen.rowCount > 0) {
+          await client.query("ROLLBACK");
+          return false;
+        }
+        await client.query(
+          `INSERT INTO ton_sales (tg_id, fg_user_id, grams, nanoton, tg_stars, charge_id)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [String(tgID), fgUserID, grams, String(nanoton), tgStars, chargeID],
+        );
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+      if (!main) throw new Error("нет доступа к базе сервера");
+      const mclient = await main.connect();
+      try {
+        await mclient.query("BEGIN");
+        await mclient.query(
+          `INSERT INTO ton_balances (user_id, balance_nanoton, granted, updated_at)
+           VALUES ($1, $2, true, now())
+           ON CONFLICT (user_id) DO UPDATE SET balance_nanoton = ton_balances.balance_nanoton + EXCLUDED.balance_nanoton, updated_at = now()`,
+          [fgUserID, String(nanoton)],
+        );
+        await mclient.query(
+          `INSERT INTO ton_transactions (user_id, amount_nanoton, reason, date)
+           VALUES ($1, $2, $3, $4)`,
+          [fgUserID, String(nanoton), "покупка грамм через бота", Math.floor(Date.now() / 1000)],
+        );
+        await mclient.query("COMMIT");
+      } catch (error) {
+        await mclient.query("ROLLBACK");
+        throw error;
+      } finally {
+        mclient.release();
+      }
+      return true;
+    },
+
+    async tonSeen(chargeID) {
+      const result = await pool.query("SELECT 1 FROM ton_sales WHERE charge_id = $1", [chargeID]);
+      return result.rowCount > 0;
+    },
+
     // моя статистика доната: звёзды + нфт-покупки.
     async myStats(tgID) {
       const stars = await pool.query(
