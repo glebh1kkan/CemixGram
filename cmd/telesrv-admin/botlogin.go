@@ -59,7 +59,7 @@ type botLoginTokenRequest struct {
 
 func (s *server) handleBotLoginTokenAPI(w http.ResponseWriter, r *http.Request) {
 	var body botLoginTokenRequest
-	if !decodeJSON(w, r, &body) {
+	if !decodeAction(w, r, &body) {
 		return
 	}
 	if len(s.cfg.BotSecret) == 0 || len(body.Secret) == 0 ||

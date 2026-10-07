@@ -143,7 +143,7 @@ func loadConfig() (uiConfig, error) {
 		adminAPIAddr = defaultAdminAPIAddr
 	}
 
-	if appCfg.AdminUIPassword == "" && appCfg.AdminUIToken == "" && os.Getenv("TELESRV_ADMIN_BOT_SECRET") == "" {
+	if appCfg.AdminUIPassword == "" && appCfg.AdminUIToken == "" && appCfg.AdminBotSecret == "" {
 		return uiConfig{}, fmt.Errorf("TELESRV_ADMIN_UI_PASSWORD or TELESRV_ADMIN_UI_TOKEN is required (or TELESRV_ADMIN_BOT_SECRET for bot-only login)")
 	}
 	if strings.TrimSpace(appCfg.AdminAPIToken) == "" {
@@ -171,7 +171,7 @@ func loadConfig() (uiConfig, error) {
 		Password:                   appCfg.AdminUIPassword,
 		Token:                      appCfg.AdminUIToken,
 		SessionKey:                 sum[:],
-		BotSecret:                  strings.TrimSpace(os.Getenv("TELESRV_ADMIN_BOT_SECRET")),
+		BotSecret:                  strings.TrimSpace(appCfg.AdminBotSecret),
 		DiskStatsPath:              dashboardDiskPath(appCfg),
 		Permissions:                appCfg.AdminUIPermissions,
 		IdentityDir:                appCfg.IdentityDir,

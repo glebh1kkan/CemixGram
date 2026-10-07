@@ -157,6 +157,8 @@ type Config struct {
 	AdminUIPassword string
 	AdminUIToken    string
 	AdminSessionKey string
+	// AdminBotSecret authorizes the Telegram bot to mint one-time panel logins.
+	AdminBotSecret string
 	// AdminUIPermissions is the permission set granted to a panel session that
 	// authenticated with TELESRV_ADMIN_UI_PASSWORD / _TOKEN. The single entry "*"
 	// means "every permission" and is the shipped default, so enabling RBAC never
@@ -940,6 +942,7 @@ func Load() (Config, error) {
 		AdminUIPassword:                       envOr("TELESRV_ADMIN_UI_PASSWORD", ""),
 		AdminUIToken:                          envOr("TELESRV_ADMIN_UI_TOKEN", ""),
 		AdminSessionKey:                       envOr("TELESRV_ADMIN_SESSION_KEY", ""),
+		AdminBotSecret:                        envOr("TELESRV_ADMIN_BOT_SECRET", ""),
 
 		// 用 127.0.0.1 而非 localhost：localhost 在 Windows 上会先解析到 IPv6 ::1，而 Docker
 		// Desktop 的端口转发只在 IPv4 监听，IPv6 连接要等 ~1s 超时才回退 IPv4（实测 localhost
