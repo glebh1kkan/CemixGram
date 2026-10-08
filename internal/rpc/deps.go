@@ -1218,6 +1218,8 @@ type GiftsService interface {
 	Catalog(ctx context.Context) ([]domain.StarGift, error)
 	CatalogHash(ctx context.Context) (int, error)
 	GiftByID(ctx context.Context, id int64) (domain.StarGift, bool, error)
+	// SalePrice returns the effective sale price (admin override or catalog stars).
+	SalePrice(ctx context.Context, giftID int64) (domain.StarGiftAmount, error)
 	GiftRevisionByID(ctx context.Context, revisionID int64) (domain.StarGift, bool, error)
 	CollectiblePreview(ctx context.Context, giftID int64) (domain.StarGiftUpgradePreview, bool, error)
 	CollectiblePreviewSample(ctx context.Context, giftID int64) (domain.StarGiftUpgradePreview, bool, error)

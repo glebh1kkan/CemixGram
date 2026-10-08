@@ -406,6 +406,7 @@ type StarGiftPurchaseRequest struct {
 	Message          string
 	MessageEntities  []MessageEntity
 	ChargeStars      int64
+	ChargeCurrency   StarGiftCurrency
 	FormID           int64
 	CommandKey       string
 	Date             int
@@ -435,6 +436,7 @@ type StarGiftPurchaseForm struct {
 	Message         string
 	MessageEntities []MessageEntity
 	ChargeStars     int64
+	ChargeCurrency  StarGiftCurrency
 	IssuedAt        int
 	ExpiresAt       int
 }

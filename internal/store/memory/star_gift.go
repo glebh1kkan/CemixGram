@@ -22,6 +22,7 @@ type StarGiftStore struct {
 	enabled          map[int64]bool
 	sortOrder        map[int64]int
 	animations       map[int64][]byte
+	priceOverrides   map[int64]domain.StarGiftAmount
 	collectibles     map[int64]domain.StarGiftCollectibleRevision
 	uniqueByID       map[int64]domain.UniqueStarGift
 	uniqueBySlug     map[string]int64
@@ -206,6 +207,33 @@ func (s *StarGiftStore) SetCatalogSortOrder(_ context.Context, giftID int64, sor
 	changed := s.sortOrder[giftID] != sortOrder
 	s.sortOrder[giftID] = sortOrder
 	return changed, nil
+}
+
+func (s *StarGiftStore) GiftPriceOverride(_ context.Context, giftID int64) (domain.StarGiftAmount, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	price, ok := s.priceOverrides[giftID]
+	return price, ok, nil
+}
+
+func (s *StarGiftStore) SetGiftPriceOverride(_ context.Context, giftID int64, price *domain.StarGiftAmount) error {
+	if price != nil && price.Currency != domain.StarGiftCurrencyStars && price.Currency != domain.StarGiftCurrencyTON {
+		return domain.ErrStarGiftInvalid
+	}
+	if price != nil && price.Amount <= 0 {
+		return domain.ErrStarGiftInvalid
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if price == nil {
+		delete(s.priceOverrides, giftID)
+		return nil
+	}
+	if s.priceOverrides == nil {
+		s.priceOverrides = make(map[int64]domain.StarGiftAmount)
+	}
+	s.priceOverrides[giftID] = *price
+	return nil
 }
 
 func (s *StarGiftStore) AnimationJSON(_ context.Context, giftID int64) ([]byte, bool, error) {

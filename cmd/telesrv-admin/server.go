@@ -172,6 +172,8 @@ func (s *server) routes() http.Handler {
 	mux.Handle("POST /api/actions/publish-gift-collectibles", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handlePublishStarGiftCollectiblesAPI)))
 	mux.Handle("POST /api/actions/set-gift-enabled", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleSetStarGiftEnabledAPI)))
 	mux.Handle("POST /api/actions/set-gift-sort-order", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleSetStarGiftSortOrderAPI)))
+	mux.Handle("POST /api/actions/set-gift-price", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleSetGiftPriceAPI)))
+	mux.Handle("GET /api/gifts/{id}/price", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleGetGiftPriceAPI)))
 	mux.Handle("POST /api/actions/give-gift", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleGiveGiftAPI)))
 	mux.Handle("POST /api/actions/mint-collectible-username", s.scopedRoute(permissionUsernamesManage, http.HandlerFunc(s.handleMintCollectibleUsernameAPI)))
 	mux.Handle("POST /api/actions/mint-collectible-phone", s.scopedRoute(permissionPhonesManage, http.HandlerFunc(s.handleMintCollectiblePhoneAPI)))
@@ -2494,6 +2496,50 @@ type setStarGiftSortOrderAPIRequest struct {
 	Confirm   bool   `json:"confirm"`
 	GiftID    int64  `json:"gift_id,string"`
 	SortOrder int    `json:"sort_order"`
+}
+
+type setGiftPriceAPIRequest struct {
+	CommandID     string `json:"command_id"`
+	Reason        string `json:"reason"`
+	Confirm       bool   `json:"confirm"`
+	GiftID        int64  `json:"gift_id,string"`
+	Currency      string `json:"currency"`
+	AmountNanoton int64  `json:"amount_nanoton,string"`
+}
+
+func (s *server) handleSetGiftPriceAPI(w http.ResponseWriter, r *http.Request) {
+	var body setGiftPriceAPIRequest
+	if !decodeAction(w, r, &body) {
+		return
+	}
+	req := admin.SetGiftPriceRequest{
+		CommandMeta:   s.commandMetaFromAPI(r, body.CommandID, body.Reason, body.Confirm, "set-gift-price"),
+		GiftID:        body.GiftID,
+		Currency:      body.Currency,
+		AmountNanoton: body.AmountNanoton,
+	}
+	result, err := s.callAdminAPI(r.Context(), "/v1/gifts/set-price", req)
+	writeCommandResultAPI(w, result, err)
+}
+
+func (s *server) handleGetGiftPriceAPI(w http.ResponseWriter, r *http.Request) {
+	giftID, err := parseInt64(r.PathValue("id"))
+	if err != nil || giftID <= 0 {
+		writeAPIError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if s.read == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "read store is not configured")
+		return
+	}
+	currency, amount, found, err := s.read.GiftPriceOverride(r.Context(), giftID)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"gift_id": giftID, "currency": currency, "amount_nanoton": amount, "overridden": found,
+	})
 }
 
 func (s *server) handleSetStarGiftSortOrderAPI(w http.ResponseWriter, r *http.Request) {

@@ -484,6 +484,18 @@ type StarGiftRow struct {
 	UpdatedAt           time.Time
 }
 
+// GiftPriceOverride returns the admin sale price override for the panel.
+func (s *readStore) GiftPriceOverride(ctx context.Context, giftID int64) (currency string, amount int64, found bool, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT currency, amount_nanoton FROM gift_price_overrides WHERE gift_id=$1`, giftID).Scan(&currency, &amount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", 0, false, nil
+	}
+	if err != nil {
+		return "", 0, false, err
+	}
+	return currency, amount, true, nil
+}
+
 func (s *readStore) ListStarGifts(ctx context.Context) ([]StarGiftRow, error) {
 	rows, err := s.pool.Query(ctx, `
 SELECT c.gift_id, r.id, r.revision, r.title, r.stars, r.convert_stars,

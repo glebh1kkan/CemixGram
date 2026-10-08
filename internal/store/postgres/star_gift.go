@@ -407,6 +407,43 @@ WHERE gift_id=$1 AND sort_order IS DISTINCT FROM $2`, giftID, sortOrder)
 	return false, nil
 }
 
+func (s *StarGiftStore) GiftPriceOverride(ctx context.Context, giftID int64) (domain.StarGiftAmount, bool, error) {
+	var currency string
+	var amount int64
+	err := s.db.QueryRow(ctx, `SELECT currency, amount_nanoton FROM gift_price_overrides WHERE gift_id=$1`, giftID).Scan(&currency, &amount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.StarGiftAmount{}, false, nil
+	}
+	if err != nil {
+		return domain.StarGiftAmount{}, false, fmt.Errorf("read gift price override: %w", err)
+	}
+	return domain.StarGiftAmount{Currency: domain.StarGiftCurrency(currency), Amount: amount}, true, nil
+}
+
+func (s *StarGiftStore) SetGiftPriceOverride(ctx context.Context, giftID int64, price *domain.StarGiftAmount) error {
+	if price == nil {
+		_, err := s.db.Exec(ctx, `DELETE FROM gift_price_overrides WHERE gift_id=$1`, giftID)
+		if err != nil {
+			return fmt.Errorf("clear gift price override: %w", err)
+		}
+		return nil
+	}
+	if price.Currency != domain.StarGiftCurrencyStars && price.Currency != domain.StarGiftCurrencyTON {
+		return domain.ErrStarGiftInvalid
+	}
+	if price.Amount <= 0 {
+		return domain.ErrStarGiftInvalid
+	}
+	_, err := s.db.Exec(ctx, `INSERT INTO gift_price_overrides(gift_id, currency, amount_nanoton, updated_at)
+VALUES($1, $2, $3, now())
+ON CONFLICT(gift_id) DO UPDATE SET currency=EXCLUDED.currency, amount_nanoton=EXCLUDED.amount_nanoton, updated_at=now()`,
+		giftID, string(price.Currency), price.Amount)
+	if err != nil {
+		return fmt.Errorf("set gift price override: %w", err)
+	}
+	return nil
+}
+
 func (s *StarGiftStore) AnimationJSON(ctx context.Context, giftID int64) ([]byte, bool, error) {
 	var raw []byte
 	err := s.db.QueryRow(ctx, `

@@ -149,6 +149,59 @@ func (s *Service) CatalogAll(ctx context.Context) ([]domain.StarGift, error) {
 	return s.store.CatalogAll(ctx)
 }
 
+// SalePrice returns the effective sale price: admin override wins,
+// otherwise the catalog revision stars price in XTR.
+func (s *Service) SalePrice(ctx context.Context, giftID int64) (domain.StarGiftAmount, error) {
+	if s == nil || s.store == nil {
+		return domain.StarGiftAmount{}, domain.ErrStarGiftUnavailable
+	}
+	if price, found, err := s.store.GiftPriceOverride(ctx, giftID); err != nil {
+		return domain.StarGiftAmount{}, err
+	} else if found {
+		return price, nil
+	}
+	gift, ok, err := s.GiftByID(ctx, giftID)
+	if err != nil || !ok {
+		// Disabled (not yet published) gifts are absent from the enabled
+		// snapshot; the admin prices them before enabling.
+		all, allErr := s.store.CatalogAll(ctx)
+		if allErr != nil {
+			return domain.StarGiftAmount{}, domain.ErrStarGiftNotFound
+		}
+		for _, g := range all {
+			if g.ID == giftID {
+				gift, ok = g, true
+				break
+			}
+		}
+		if !ok {
+			return domain.StarGiftAmount{}, domain.ErrStarGiftNotFound
+		}
+	}
+	return domain.StarGiftAmount{Currency: domain.StarGiftCurrencyStars, Amount: gift.Stars}, nil
+}
+
+// GiftPriceOverride returns the raw admin override, if any.
+func (s *Service) GiftPriceOverride(ctx context.Context, giftID int64) (domain.StarGiftAmount, bool, error) {
+	if s == nil || s.store == nil {
+		return domain.StarGiftAmount{}, false, domain.ErrStarGiftUnavailable
+	}
+	return s.store.GiftPriceOverride(ctx, giftID)
+}
+
+// SetGiftPrice stores or clears the admin sale price override (nil clears).
+// TON amounts are nanoton. It invalidates the catalog snapshot.
+func (s *Service) SetGiftPrice(ctx context.Context, giftID int64, price *domain.StarGiftAmount) error {
+	if s == nil || s.store == nil {
+		return domain.ErrStarGiftUnavailable
+	}
+	if err := s.store.SetGiftPriceOverride(ctx, giftID, price); err != nil {
+		return err
+	}
+	s.InvalidateStarGiftCatalog()
+	return nil
+}
+
 func (s *Service) CatalogHash(ctx context.Context) (int, error) {
 	if err := s.ensureCatalog(ctx); err != nil {
 		return 0, err
@@ -652,7 +705,15 @@ func validatePurchaseFormIntent(form domain.StarGiftPurchaseForm, req domain.Sta
 		!slices.Equal(form.MessageEntities, req.MessageEntities) {
 		return domain.ErrStarGiftFormPurposeInvalid
 	}
-	if form.RevisionID != req.RevisionID || form.ChargeStars != req.ChargeStars {
+	formCurrency := form.ChargeCurrency
+	if formCurrency == "" {
+		formCurrency = domain.StarGiftCurrencyStars
+	}
+	reqCurrency := req.ChargeCurrency
+	if reqCurrency == "" {
+		reqCurrency = domain.StarGiftCurrencyStars
+	}
+	if form.RevisionID != req.RevisionID || form.ChargeStars != req.ChargeStars || formCurrency != reqCurrency {
 		return domain.ErrStarGiftFormAmountMismatch
 	}
 	return nil

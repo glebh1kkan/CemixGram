@@ -23,6 +23,10 @@ type StarGiftStore interface {
 	CreateCatalogBundle(ctx context.Context, write domain.StarGiftCatalogBundleWrite) (domain.StarGiftCatalogBundleResult, error)
 	SetCatalogEnabled(ctx context.Context, giftID int64, enabled bool) (bool, error)
 	SetCatalogSortOrder(ctx context.Context, giftID int64, sortOrder int) (bool, error)
+	// GiftPriceOverride returns the admin-set sale price (nil currency = none).
+	GiftPriceOverride(ctx context.Context, giftID int64) (domain.StarGiftAmount, bool, error)
+	// SetGiftPriceOverride upserts the admin-set sale price; nil clears it.
+	SetGiftPriceOverride(ctx context.Context, giftID int64, price *domain.StarGiftAmount) error
 	// AnimationJSON 返回当前版本的规范化 Lottie JSON，供管理后台安全预览。
 	AnimationJSON(ctx context.Context, giftID int64) ([]byte, bool, error)
 	// PublishCollectibleRevision validates and atomically publishes a new immutable attribute pool.

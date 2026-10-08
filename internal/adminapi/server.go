@@ -85,6 +85,8 @@ type Service interface {
 	PublishStarGiftCollectibles(ctx context.Context, req admin.PublishStarGiftCollectiblesRequest) (admin.CommandResult, error)
 	SetStarGiftEnabled(ctx context.Context, req admin.SetStarGiftEnabledRequest) (admin.CommandResult, error)
 	SetStarGiftSortOrder(ctx context.Context, req admin.SetStarGiftSortOrderRequest) (admin.CommandResult, error)
+	SetGiftPrice(ctx context.Context, req admin.SetGiftPriceRequest) (admin.CommandResult, error)
+	GiftPrice(ctx context.Context, giftID int64) (admin.GiftPriceResult, error)
 	GiveGift(ctx context.Context, req admin.GiveGiftRequest) (admin.CommandResult, error)
 	StarGiftAnimation(ctx context.Context, giftID int64) ([]byte, bool, error)
 	EmojiAnimation(ctx context.Context, documentID int64) ([]byte, bool, error)
@@ -274,6 +276,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /v1/gifts/{id}/collectibles/publish", s.authenticated(s.handlePublishStarGiftCollectibles))
 	mux.HandleFunc("POST /v1/gifts/set-enabled", s.authenticated(s.handleSetStarGiftEnabled))
 	mux.HandleFunc("POST /v1/gifts/set-sort-order", s.authenticated(s.handleSetStarGiftSortOrder))
+	mux.HandleFunc("POST /v1/gifts/set-price", s.authenticated(s.handleSetGiftPrice))
+	mux.HandleFunc("GET /v1/gifts/{id}/price", s.authenticated(s.handleGetGiftPrice))
 	mux.HandleFunc("POST /v1/gifts/give", s.authenticated(s.handleGiveGift))
 	mux.HandleFunc("GET /v1/gifts/{id}/animation", s.authenticated(s.handleStarGiftAnimation))
 	mux.HandleFunc("GET /v1/emoji/{id}/animation", s.authenticated(s.handleEmojiAnimation))
@@ -1165,6 +1169,29 @@ func (s *Server) handleSetStarGiftSortOrder(w http.ResponseWriter, r *http.Reque
 	}
 	result, err := s.svc.SetStarGiftSortOrder(r.Context(), req)
 	writeCommandResult(w, result, err)
+}
+
+func (s *Server) handleSetGiftPrice(w http.ResponseWriter, r *http.Request) {
+	var req admin.SetGiftPriceRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	result, err := s.svc.SetGiftPrice(r.Context(), req)
+	writeCommandResult(w, result, err)
+}
+
+func (s *Server) handleGetGiftPrice(w http.ResponseWriter, r *http.Request) {
+	giftID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || giftID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid gift id")
+		return
+	}
+	result, err := s.svc.GiftPrice(r.Context(), giftID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleGiveGift(w http.ResponseWriter, r *http.Request) {

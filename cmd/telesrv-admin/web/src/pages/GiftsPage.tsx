@@ -11,6 +11,7 @@ import { formatDate, localInputValue, titleFromFilename, toUnixSeconds } from ".
 import type { Navigate } from "../routing";
 import type { CommandResult, OfficialStarGiftRow, StarGiftRow } from "../types";
 import { GiftCollectiblesModal } from "./GiftCollectiblesModal";
+import { GiftPriceModal } from "./GiftPriceModal";
 import { GiftPackModal } from "./GiftPackModal";
 
 type OfficialGiftCategory = "all" | "upgrade" | "craft" | "basic";
@@ -134,6 +135,7 @@ export function GiftsPage({ navigate }: { navigate: Navigate }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [importError, setImportError] = useState("");
+  const [priceGift, setPriceGift] = useState<StarGiftRow | null>(null);
 
   async function load() {
     setError("");
@@ -356,7 +358,7 @@ return {
                 <td>{gift.ReceivedCount}</td>
                 <td><Badge tone={gift.Enabled ? "good" : "neutral"}>{gift.Enabled ? t("common.enabled") : t("common.disabled")}</Badge></td>
                 <td>{formatDate(gift.UpdatedAt)}</td>
-                <td><div className="gift-table-actions"><button className="btn compact-btn collectible-button" type="button" onClick={() => setCollectibleGift(gift)}><Gem size={13} />{t("collectibles.manage")}</button><button className="btn compact-btn" type="button" onClick={() => startRevision(gift)}>{t("gifts.replace")}</button><ActionButton compact tone="neutral" label={gift.Enabled ? t("gifts.disable") : t("gifts.enable")} path="/api/actions/set-gift-enabled" payload={() => ({ gift_id: gift.GiftID, enabled: !gift.Enabled })} onDone={() => void load()} /></div></td>
+                <td><div className="gift-table-actions"><button className="btn compact-btn collectible-button" type="button" onClick={() => setCollectibleGift(gift)}><Gem size={13} />{t("collectibles.manage")}</button><button className="btn compact-btn" type="button" onClick={() => startRevision(gift)}>{t("gifts.replace")}</button><button className="btn compact-btn" type="button" onClick={() => setPriceGift(gift)}>💰 {t("gifts.setPrice")}</button><ActionButton compact tone="neutral" label={gift.Enabled ? t("gifts.disable") : t("gifts.enable")} path="/api/actions/set-gift-enabled" payload={() => ({ gift_id: gift.GiftID, enabled: !gift.Enabled })} onDone={() => void load()} /></div></td>
               </tr>
             ))}
             {visibleGifts.length === 0 && <EmptyRow colSpan={9} />}
@@ -506,6 +508,7 @@ return {
       )}
       {collectibleGift && <GiftCollectiblesModal gift={collectibleGift} onClose={() => setCollectibleGift(null)} onPublished={() => void load()} />}
       {packOpen && <GiftPackModal onClose={() => setPackOpen(false)} onImported={() => void load()} />}
+      {priceGift && <GiftPriceModal gift={priceGift} onClose={() => setPriceGift(null)} onDone={() => void load()} />}
     </PageFrame>
   );
 }

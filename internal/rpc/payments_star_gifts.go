@@ -490,20 +490,31 @@ func (r *Router) onPaymentsGetPaymentForm(ctx context.Context, req *tg.PaymentsG
 			return nil, starGiftInvalidErr()
 		}
 	}
+	price, err := r.deps.Gifts.SalePrice(ctx, gift.ID)
+	if err != nil {
+		return nil, starGiftLifecycleErr(err)
+	}
+	if price.Currency == domain.StarGiftCurrencyTON && inv.IncludeUpgrade {
+		return nil, starGiftInvalidErr()
+	}
 	now := int(r.clock.Now().Unix())
 	form, err := r.deps.Gifts.IssuePurchaseForm(ctx, domain.StarGiftPurchaseForm{
 		BuyerUserID: userID, To: peer, GiftID: gift.ID, RevisionID: gift.RevisionID,
 		IncludeUpgrade: inv.IncludeUpgrade, HideName: inv.HideName, Message: giftMessage, MessageEntities: giftMessageEntities,
-		ChargeStars: gift.Stars + upgradeStars, IssuedAt: now, ExpiresAt: now + 600,
+		ChargeStars: price.Amount + upgradeStars, ChargeCurrency: price.Currency, IssuedAt: now, ExpiresAt: now + 600,
 	})
 	if err != nil {
 		return nil, starGiftLifecycleErr(err)
 	}
+	invoiceCurrency := "XTR"
+	if price.Currency == domain.StarGiftCurrencyTON {
+		invoiceCurrency = "TON"
+	}
 	return &tg.PaymentsPaymentFormStarGift{
 		FormID: form.FormID,
 		Invoice: tg.Invoice{
-			Currency: "XTR",
-			Prices:   []tg.LabeledPrice{{Label: giftPriceLabel(gift), Amount: gift.Stars + upgradeStars}},
+			Currency: invoiceCurrency,
+			Prices:   []tg.LabeledPrice{{Label: giftPriceLabel(gift), Amount: price.Amount + upgradeStars}},
 		},
 	}, nil
 }
@@ -704,11 +715,18 @@ func (r *Router) onPaymentsSendStarsForm(ctx context.Context, req *tg.PaymentsSe
 			return nil, starGiftInvalidErr()
 		}
 	}
+	price, err := r.deps.Gifts.SalePrice(ctx, gift.ID)
+	if err != nil {
+		return nil, starGiftLifecycleErr(err)
+	}
+	if price.Currency == domain.StarGiftCurrencyTON && inv.IncludeUpgrade {
+		return nil, starGiftInvalidErr()
+	}
 	now := int(r.clock.Now().Unix())
 	purchaseReq := domain.StarGiftPurchaseRequest{BuyerUserID: userID, BuyerPremium: buyerPremium, To: peer,
 		GiftID: gift.ID, RevisionID: gift.RevisionID, IncludeUpgrade: inv.IncludeUpgrade, HideName: inv.HideName,
 		Message: giftMessage, MessageEntities: giftMessageEntities,
-		ChargeStars: gift.Stars + upgradeStars, FormID: req.FormID, CommandKey: fmt.Sprintf("purchase:%d", req.FormID), Date: now,
+		ChargeStars: price.Amount + upgradeStars, ChargeCurrency: price.Currency, FormID: req.FormID, CommandKey: fmt.Sprintf("purchase:%d", req.FormID), Date: now,
 		OriginAuthKeyID: rawAuthKeyIDForOrigin(ctx), OriginSessionID: sessionIDOrZero(ctx)}
 	recipientBlocked := false
 	recipientUnsaved := false
@@ -722,7 +740,17 @@ func (r *Router) onPaymentsSendStarsForm(ctx context.Context, req *tg.PaymentsSe
 			return nil, err
 		}
 	}
+	if price.Currency == domain.StarGiftCurrencyTON {
+		if _, err := r.deps.Gifts.TonBalance(ctx, userID); err != nil {
+			return nil, internalErr()
+		}
+	} else if _, err := r.deps.Stars.GetBalance(ctx, userID); err != nil {
+		return nil, starsErr(err)
+	}
 	if capability, ok := r.deps.Gifts.(interface{ AtomicPurchaseConfigured() bool }); ok && !capability.AtomicPurchaseConfigured() {
+		if price.Currency == domain.StarGiftCurrencyTON {
+			return nil, notImplementedErr()
+		}
 		if err := r.deps.Gifts.ValidatePurchaseForm(ctx, purchaseReq); err != nil {
 			return nil, starGiftLifecycleErr(err)
 		}
@@ -741,7 +769,7 @@ func (r *Router) onPaymentsSendStarsForm(ctx context.Context, req *tg.PaymentsSe
 		return nil, starGiftLifecycleErr(err)
 	}
 	updates := r.starGiftSendUpdates(ctx, userID, result.Send)
-	appendStarGiftBalanceUpdate(updates, domain.StarGiftCurrencyStars, result.Balance.Balance)
+	appendStarGiftBalanceUpdate(updates, price.Currency, result.Balance.Balance)
 	r.invalidateStarGiftOwner(peer)
 	return &tg.PaymentsPaymentResult{Updates: updates}, nil
 }

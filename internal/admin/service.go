@@ -59,6 +59,7 @@ const (
 	ActionImportOfficialStarGift  = "gifts.official.import"
 	ActionPublishGiftCollectibles = "gifts.collectibles.publish"
 	ActionSetStarGiftEnabled      = "gifts.set_enabled"
+	ActionSetGiftPrice            = "gifts.set_price"
 	ActionSetStarGiftSortOrder    = "gifts.set_sort_order"
 	ActionGiveGift                = "gifts.give"
 	ActionCreateBot               = "bot.create"
@@ -328,6 +329,9 @@ type GiftsService interface {
 	CreateCatalogBundle(ctx context.Context, write domain.StarGiftCatalogBundleWrite) (domain.StarGiftCatalogBundleResult, error)
 	SetCatalogEnabled(ctx context.Context, giftID int64, enabled bool) (bool, error)
 	SetCatalogSortOrder(ctx context.Context, giftID int64, sortOrder int) (bool, error)
+	SalePrice(ctx context.Context, giftID int64) (domain.StarGiftAmount, error)
+	SetGiftPrice(ctx context.Context, giftID int64, price *domain.StarGiftAmount) error
+	GiftPriceOverride(ctx context.Context, giftID int64) (domain.StarGiftAmount, bool, error)
 	AnimationJSON(ctx context.Context, giftID int64) ([]byte, bool, error)
 	CreateCollectibleRevision(ctx context.Context, write domain.StarGiftCollectibleWrite) (domain.StarGiftCollectibleRevision, error)
 	CollectiblePreview(ctx context.Context, giftID int64) (domain.StarGiftUpgradePreview, bool, error)
@@ -3707,6 +3711,92 @@ func (s *Service) resolveReleasedBy(ctx context.Context, raw string) (domain.Pee
 		return domain.Peer{}, fmt.Errorf("%w: released by must be @username or a numeric user id", domain.ErrStarGiftInvalid)
 	}
 	return domain.Peer{Type: domain.PeerTypeUser, ID: userID}, nil
+}
+
+// GiftPriceResult is the effective sale price readable by the panel.
+type GiftPriceResult struct {
+	GiftID        int64  `json:"gift_id"`
+	Currency      string `json:"currency"`
+	AmountNanoton int64  `json:"amount_nanoton"`
+	Overridden    bool   `json:"overridden"`
+}
+
+// GiftPrice returns the effective sale price (override or catalog stars).
+func (s *Service) GiftPrice(ctx context.Context, giftID int64) (GiftPriceResult, error) {
+	if s == nil || s.gifts == nil {
+		return GiftPriceResult{}, fmt.Errorf("star gift service is not configured")
+	}
+	if giftID <= 0 {
+		return GiftPriceResult{}, domain.ErrStarGiftInvalid
+	}
+	price, err := s.gifts.SalePrice(ctx, giftID)
+	if err != nil {
+		return GiftPriceResult{}, err
+	}
+	_, overridden, err := s.gifts.GiftPriceOverride(ctx, giftID)
+	if err != nil {
+		return GiftPriceResult{}, err
+	}
+	return GiftPriceResult{
+		GiftID:        giftID,
+		Currency:      string(price.Currency),
+		AmountNanoton: price.Amount,
+		Overridden:    overridden,
+	}, nil
+}
+
+// SetGiftPriceRequest sets (or clears, when Amount is 0) the admin sale price
+// override for a catalog gift. Currency is "XTR" (stars) or "TON", amount is
+// nanoton for TON. The override wins over the catalog revision price at
+// checkout; clearing restores the catalog price.
+type SetGiftPriceRequest struct {
+	CommandMeta
+	GiftID   int64  `json:"gift_id"`
+	Currency string `json:"currency"`
+	// AmountNanoton is stars for XTR, nanoton for TON. Zero clears the override.
+	AmountNanoton int64 `json:"amount_nanoton"`
+}
+
+// SetGiftPrice stores or clears the sale price override and busts the catalog
+// snapshot so clients see the new price immediately.
+func (s *Service) SetGiftPrice(ctx context.Context, req SetGiftPriceRequest) (CommandResult, error) {
+	if s == nil || s.gifts == nil {
+		return CommandResult{}, fmt.Errorf("star gift service is not configured")
+	}
+	currency := domain.StarGiftCurrency(strings.ToUpper(strings.TrimSpace(req.Currency)))
+	details := map[string]any{"gift_id": req.GiftID, "currency": string(currency), "amount_nanoton": req.AmountNanoton}
+	if req.GiftID <= 0 {
+		return CommandResult{}, domain.ErrStarGiftInvalid
+	}
+	var price *domain.StarGiftAmount
+	if req.AmountNanoton > 0 {
+		if currency != domain.StarGiftCurrencyStars && currency != domain.StarGiftCurrencyTON {
+			return CommandResult{}, domain.ErrStarGiftInvalid
+		}
+		price = &domain.StarGiftAmount{Currency: currency, Amount: req.AmountNanoton}
+	} else if req.AmountNanoton < 0 {
+		return CommandResult{}, domain.ErrStarGiftInvalid
+	}
+	return s.runCommand(ctx, req.CommandMeta, ActionSetGiftPrice, 0, domain.Peer{}, req, func() (CommandResult, error) {
+		previous, err := s.gifts.SalePrice(ctx, req.GiftID)
+		if err != nil {
+			return CommandResult{}, err
+		}
+		if req.DryRun {
+			details["previous"] = fmt.Sprintf("%s %d", previous.Currency, previous.Amount)
+			return CommandResult{Message: "dry-run completed", Details: details}, nil
+		}
+		if err := s.gifts.SetGiftPrice(ctx, req.GiftID, price); err != nil {
+			return CommandResult{}, err
+		}
+		after, err := s.gifts.SalePrice(ctx, req.GiftID)
+		if err != nil {
+			return CommandResult{}, err
+		}
+		details["previous"] = fmt.Sprintf("%s %d", previous.Currency, previous.Amount)
+		details["updated"] = fmt.Sprintf("%s %d", after.Currency, after.Amount)
+		return CommandResult{Message: "gift price updated", Details: details}, nil
+	})
 }
 
 func (s *Service) ImportStarGift(ctx context.Context, req ImportStarGiftRequest) (CommandResult, error) {

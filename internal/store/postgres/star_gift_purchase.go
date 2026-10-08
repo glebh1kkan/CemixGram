@@ -36,10 +36,16 @@ func (s *StarGiftLifecycleStore) IssueStarGiftPurchaseForm(ctx context.Context, 
 		if form.FormID == 0 {
 			form.FormID = 1
 		}
+		if form.ChargeCurrency == "" {
+			form.ChargeCurrency = domain.StarGiftCurrencyStars
+		}
+		if form.ChargeCurrency != domain.StarGiftCurrencyStars && form.ChargeCurrency != domain.StarGiftCurrencyTON {
+			return domain.StarGiftPurchaseForm{}, domain.ErrStarGiftFormPurposeInvalid
+		}
 		_, err := s.db.Exec(ctx, `INSERT INTO star_gift_purchase_forms(buyer_user_id,form_id,gift_id,revision_id,
-recipient_peer_type,recipient_peer_id,include_upgrade,hide_name,message,message_entities,charge_stars,issued_at,expires_at)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, form.BuyerUserID, form.FormID, form.GiftID, form.RevisionID,
-			string(form.To.Type), form.To.ID, form.IncludeUpgrade, form.HideName, form.Message, entitiesJSON, form.ChargeStars, form.IssuedAt, form.ExpiresAt)
+recipient_peer_type,recipient_peer_id,include_upgrade,hide_name,message,message_entities,charge_stars,charge_currency,issued_at,expires_at)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, form.BuyerUserID, form.FormID, form.GiftID, form.RevisionID,
+			string(form.To.Type), form.To.ID, form.IncludeUpgrade, form.HideName, form.Message, entitiesJSON, form.ChargeStars, string(form.ChargeCurrency), form.IssuedAt, form.ExpiresAt)
 		if err == nil {
 			return form, nil
 		}
@@ -62,15 +68,16 @@ func validateStarGiftPurchaseForm(ctx context.Context, db sqlcgen.DBTX, req doma
 		return domain.ErrStarGiftFormExpired
 	}
 	query := `SELECT gift_id,revision_id,recipient_peer_type,recipient_peer_id,include_upgrade,hide_name,message,message_entities::text,
-charge_stars,issued_at,expires_at FROM star_gift_purchase_forms WHERE buyer_user_id=$1 AND form_id=$2`
+charge_stars,charge_currency,issued_at,expires_at FROM star_gift_purchase_forms WHERE buyer_user_id=$1 AND form_id=$2`
 	if lock {
 		query += ` FOR UPDATE`
 	}
 	var form domain.StarGiftPurchaseForm
 	var peerType string
+	var chargeCurrency string
 	var entitiesJSON string
 	err := db.QueryRow(ctx, query, req.BuyerUserID, req.FormID).Scan(&form.GiftID, &form.RevisionID, &peerType, &form.To.ID,
-		&form.IncludeUpgrade, &form.HideName, &form.Message, &entitiesJSON, &form.ChargeStars, &form.IssuedAt, &form.ExpiresAt)
+		&form.IncludeUpgrade, &form.HideName, &form.Message, &entitiesJSON, &form.ChargeStars, &chargeCurrency, &form.IssuedAt, &form.ExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.ErrStarGiftFormExpired
 	}
@@ -89,7 +96,8 @@ charge_stars,issued_at,expires_at FROM star_gift_purchase_forms WHERE buyer_user
 		form.HideName != req.HideName || form.Message != req.Message || !slices.Equal(form.MessageEntities, req.MessageEntities) {
 		return domain.ErrStarGiftFormPurposeInvalid
 	}
-	if form.RevisionID != req.RevisionID || form.ChargeStars != req.ChargeStars {
+	form.ChargeCurrency = domain.StarGiftCurrency(chargeCurrency)
+	if form.RevisionID != req.RevisionID || form.ChargeStars != req.ChargeStars || form.ChargeCurrency != req.ChargeCurrency {
 		return domain.ErrStarGiftFormAmountMismatch
 	}
 	return nil
@@ -312,6 +320,33 @@ func (s *StarGiftLifecycleStore) purchaseStarGiftToChannel(ctx context.Context, 
 // returned ErrStarsInsufficient even with a full wallet, which surfaced as a
 // BALANCE_TOO_LOW no matter how much revenue the bot had earned. A human buyer
 // keeps the personal ledger.
+// giftPriceOverrideTx reads the admin sale price override inside the purchase
+// transaction. Absence means the catalog revision stars price in XTR.
+func (s *StarGiftLifecycleStore) giftPriceOverrideTx(ctx context.Context, tx pgx.Tx, giftID int64) (domain.StarGiftAmount, bool, error) {
+	var currency string
+	var amount int64
+	err := tx.QueryRow(ctx, `SELECT currency, amount_nanoton FROM gift_price_overrides WHERE gift_id=$1`, giftID).Scan(&currency, &amount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.StarGiftAmount{}, false, nil
+	}
+	if err != nil {
+		return domain.StarGiftAmount{}, false, fmt.Errorf("read gift price override: %w", err)
+	}
+	return domain.StarGiftAmount{Currency: domain.StarGiftCurrency(currency), Amount: amount}, true, nil
+}
+
+// debitStarGiftPurchaseAmount charges a purchase in the override currency:
+// XTR goes through the personal/bot stars wallets, TON through the TON ledger.
+func (s *StarGiftLifecycleStore) debitStarGiftPurchaseAmount(ctx context.Context, tx pgx.Tx, req domain.StarGiftPurchaseRequest, amount domain.StarGiftAmount) (domain.StarsBalance, error) {
+	if amount.Currency == domain.StarGiftCurrencyTON {
+		if req.BuyerIsBot {
+			return domain.StarsBalance{}, domain.ErrStarGiftInvalid
+		}
+		return s.debitLifecycleAmount(ctx, tx, req.BuyerUserID, amount, domain.StarsReasonGift, req.To, req.Date, "Star gift")
+	}
+	return s.debitStarGiftPurchase(ctx, tx, req, amount.Amount)
+}
+
 func (s *StarGiftLifecycleStore) debitStarGiftPurchase(ctx context.Context, tx pgx.Tx, req domain.StarGiftPurchaseRequest, charge int64) (domain.StarsBalance, error) {
 	if req.BuyerIsBot {
 		balance, err := debitBotStarsWallet(ctx, tx, req.BuyerUserID, charge, domain.StarsReasonBotSpend, req.To, req.Date)
@@ -411,7 +446,21 @@ func (s *StarGiftLifecycleStore) prepareStarGiftPurchase(ctx context.Context, tx
 	if req.IncludeUpgrade && upgradePrice <= 0 {
 		return domain.StarGift{}, domain.SavedStarGift{}, domain.StarsBalance{}, domain.ErrStarGiftCollectibleUnavailable
 	}
-	if gift.Stars+upgradePrice != req.ChargeStars {
+	priceCurrency := domain.StarGiftCurrencyStars
+	priceAmount := gift.Stars
+	if override, found, err := s.giftPriceOverrideTx(ctx, tx, gift.ID); err != nil {
+		return domain.StarGift{}, domain.SavedStarGift{}, domain.StarsBalance{}, err
+	} else if found {
+		priceCurrency, priceAmount = override.Currency, override.Amount
+	}
+	if priceCurrency == domain.StarGiftCurrencyTON && req.IncludeUpgrade {
+		return domain.StarGift{}, domain.SavedStarGift{}, domain.StarsBalance{}, domain.ErrStarGiftInvalid
+	}
+	reqCurrency := req.ChargeCurrency
+	if reqCurrency == "" {
+		reqCurrency = domain.StarGiftCurrencyStars
+	}
+	if priceCurrency != reqCurrency || priceAmount+upgradePrice != req.ChargeStars {
 		return domain.StarGift{}, domain.SavedStarGift{}, domain.StarsBalance{}, domain.ErrStarGiftFormAmountMismatch
 	}
 	var purchased int
@@ -440,8 +489,8 @@ WHERE gift_id=$1 AND availability_remains>0 RETURNING availability_remains`, gif
 last_sale_date=$2,updated_at=now() WHERE gift_id=$1`, gift.ID, req.Date); err != nil {
 		return domain.StarGift{}, domain.SavedStarGift{}, domain.StarsBalance{}, err
 	}
-	charge := gift.Stars + upgradePrice
-	balance, err := s.debitStarGiftPurchase(ctx, tx, req, charge)
+	charge := priceAmount + upgradePrice
+	balance, err := s.debitStarGiftPurchaseAmount(ctx, tx, req, domain.StarGiftAmount{Currency: priceCurrency, Amount: charge})
 	if err != nil {
 		return domain.StarGift{}, domain.SavedStarGift{}, domain.StarsBalance{}, err
 	}
@@ -465,10 +514,14 @@ WHERE c.gift_id=$1 AND c.active_revision_id=r.id AND r.limited AND NOT r.sold_ou
 }
 
 func (s *StarGiftLifecycleStore) insertStarGiftPurchaseCommand(ctx context.Context, tx pgx.Tx, req domain.StarGiftPurchaseRequest, savedID, charge, balance int64) error {
+	currency := req.ChargeCurrency
+	if currency == "" {
+		currency = domain.StarGiftCurrencyStars
+	}
 	_, err := tx.Exec(ctx, `INSERT INTO star_gift_purchase_commands(buyer_user_id,command_key,gift_id,recipient_peer_type,
-recipient_peer_id,saved_gift_id,form_id,charge_stars,balance_after,created_at)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, req.BuyerUserID, req.CommandKey, req.GiftID, string(req.To.Type), req.To.ID,
-		savedID, req.FormID, charge, balance, req.Date)
+recipient_peer_id,saved_gift_id,form_id,charge_stars,charge_currency,balance_after,created_at)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, req.BuyerUserID, req.CommandKey, req.GiftID, string(req.To.Type), req.To.ID,
+		savedID, req.FormID, charge, string(currency), balance, req.Date)
 	return err
 }
 func (s *StarGiftLifecycleStore) loadStarGiftPurchaseReplay(ctx context.Context, req domain.StarGiftPurchaseRequest, sent domain.SendPrivateTextResult) (domain.StarGiftPurchaseResult, bool, error) {

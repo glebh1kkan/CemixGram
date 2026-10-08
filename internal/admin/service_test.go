@@ -1974,6 +1974,15 @@ func (*fakeGiftsService) SetCatalogEnabled(context.Context, int64, bool) (bool, 
 func (*fakeGiftsService) SetCatalogSortOrder(context.Context, int64, int) (bool, error) {
 	return true, nil
 }
+func (*fakeGiftsService) SalePrice(context.Context, int64) (domain.StarGiftAmount, error) {
+	return domain.StarGiftAmount{Currency: domain.StarGiftCurrencyStars, Amount: 50}, nil
+}
+func (*fakeGiftsService) SetGiftPrice(context.Context, int64, *domain.StarGiftAmount) error {
+	return nil
+}
+func (*fakeGiftsService) GiftPriceOverride(context.Context, int64) (domain.StarGiftAmount, bool, error) {
+	return domain.StarGiftAmount{}, false, nil
+}
 func (*fakeGiftsService) AnimationJSON(context.Context, int64) ([]byte, bool, error) {
 	return []byte(`{"v":"5.7"}`), true, nil
 }
