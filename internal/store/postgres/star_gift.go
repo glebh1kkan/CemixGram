@@ -614,7 +614,8 @@ func (s *StarGiftStore) DeleteCatalogGift(ctx context.Context, giftID int64) (do
 		return nil
 	})
 	if err != nil {
-		return domain.StarGiftDeleteResult{}, err
+		// Deferred NO ACTION guards surface at COMMIT time.
+		return domain.StarGiftDeleteResult{}, mapGiftDeleteError(err)
 	}
 	return result, nil
 }
