@@ -541,6 +541,20 @@ func (s *StarGiftStore) DeleteCatalogGift(ctx context.Context, giftID int64) (do
 		}
 		var attributeDocIDs []int64
 		if len(collectibleIDs) > 0 {
+			// Published pools are immutable by trigger. The table owner may
+			// lift the guards inside this transaction: DDL is transactional,
+			// so a rollback restores them, and they are re-enabled below
+			// before any other statement runs.
+			for _, guard := range [][2]string{
+				{"star_gift_collectible_models", "star_gift_collectible_model_guard"},
+				{"star_gift_collectible_patterns", "star_gift_collectible_pattern_guard"},
+				{"star_gift_collectible_backdrops", "star_gift_collectible_backdrop_guard"},
+				{"star_gift_collectible_revisions", "star_gift_collectible_revision_guard"},
+			} {
+				if _, err := tx.Exec(ctx, `ALTER TABLE `+guard[0]+` DISABLE TRIGGER `+guard[1]); err != nil {
+					return fmt.Errorf("lift collectible guard: %w", err)
+				}
+			}
 			for _, table := range []string{"star_gift_collectible_models", "star_gift_collectible_patterns", "star_gift_collectible_backdrops"} {
 				attrRows, err := tx.Query(ctx, `SELECT document_id FROM `+table+` WHERE collectible_revision_id = ANY($1) AND document_id IS NOT NULL`, collectibleIDs)
 				if err != nil {
@@ -564,6 +578,11 @@ func (s *StarGiftStore) DeleteCatalogGift(ctx context.Context, giftID int64) (do
 			}
 			if _, err := tx.Exec(ctx, `DELETE FROM star_gift_collectible_revisions WHERE gift_id=$1`, giftID); err != nil {
 				return mapGiftDeleteError(fmt.Errorf("delete collectible revisions: %w", err))
+			}
+			for _, table := range []string{"star_gift_collectible_models", "star_gift_collectible_patterns", "star_gift_collectible_backdrops", "star_gift_collectible_revisions"} {
+				if _, err := tx.Exec(ctx, `ALTER TABLE `+table+` ENABLE TRIGGER ALL`); err != nil {
+					return fmt.Errorf("restore collectible guard: %w", err)
+				}
 			}
 			result.Collectibles = len(collectibleIDs)
 		}
