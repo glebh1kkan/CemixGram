@@ -58,6 +58,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /api/login", s.handleAPILogin)
 	mux.HandleFunc("POST /api/internal/bot-login-token", s.handleBotLoginTokenAPI)
 	mux.HandleFunc("GET /auth/bot", s.handleBotLoginPage)
+	mux.HandleFunc("POST /auth/bot", s.handleBotLoginConfirm)
 	// Logout goes through the same gate as every other mutating route: a forced
 	// logout is a state change, and an invalid session is cleared by the gate
 	// itself, so nothing is stranded by protecting it.
@@ -2292,15 +2293,15 @@ func (s *server) handleImportStarGiftAPI(w http.ResponseWriter, r *http.Request)
 		PerUserTotal:   body.PerUserTotal,
 		FileName:       header.Filename,
 
-		Auction:              body.Auction,
-		AuctionSlug:          body.AuctionSlug,
-		GiftsPerRound:        body.GiftsPerRound,
-		AuctionStartDate:     body.AuctionStartDate,
-		AuctionRoundDuration: body.AuctionRoundDuration,
-		AvailabilityTotal:    body.AvailabilityTotal,
-		LockedUntilDate:      body.LockedUntilDate,
-		PriceCurrency:        body.PriceCurrency,
-		PriceAmountNanoton:   body.PriceAmountNanoton,
+		Auction:               body.Auction,
+		AuctionSlug:           body.AuctionSlug,
+		GiftsPerRound:         body.GiftsPerRound,
+		AuctionStartDate:      body.AuctionStartDate,
+		AuctionRoundDuration:  body.AuctionRoundDuration,
+		AvailabilityTotal:     body.AvailabilityTotal,
+		LockedUntilDate:       body.LockedUntilDate,
+		PriceCurrency:         body.PriceCurrency,
+		PriceAmountNanoton:    body.PriceAmountNanoton,
 		UpgradeAttributesDate: body.UpgradeAttributesDate,
 		UpgradeOpenDate:       body.UpgradeOpenDate,
 	}
@@ -2398,11 +2399,11 @@ func (s *server) handleImportOfficialStarGiftAPI(w http.ResponseWriter, r *http.
 		SupportOnly:        body.SupportOnly,
 		IncludeCollectible: body.IncludeCollectible, UpgradeStars: body.UpgradeStars,
 		SupplyTotal: body.SupplyTotal, SlugPrefix: body.SlugPrefix,
-		ReleasedBy:      body.ReleasedBy,
-		PerUserTotal:    body.PerUserTotal,
-		LockedUntilDate: body.LockedUntilDate,
-		PriceCurrency:        body.PriceCurrency,
-		PriceAmountNanoton:   body.PriceAmountNanoton,
+		ReleasedBy:            body.ReleasedBy,
+		PerUserTotal:          body.PerUserTotal,
+		LockedUntilDate:       body.LockedUntilDate,
+		PriceCurrency:         body.PriceCurrency,
+		PriceAmountNanoton:    body.PriceAmountNanoton,
 		UpgradeAttributesDate: body.UpgradeAttributesDate,
 		UpgradeOpenDate:       body.UpgradeOpenDate,
 	}
