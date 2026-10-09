@@ -32,6 +32,7 @@ export function loadConfig(env = process.env) {
     paybotToken: get("PAYBOT_TOKEN", ""),
     paybotUsername: get("PAYBOT_USERNAME", "oplatastarzbot"),
     panelURL: get("PANEL_URL", "").replace(/\/+$/, ""),
+    panelPublicURL: (get("PANEL_PUBLIC_URL", "") || get("PANEL_URL", "")).replace(/\/+$/, ""),
     adminBotSecret: get("ADMIN_BOT_SECRET", ""),
   };
 }

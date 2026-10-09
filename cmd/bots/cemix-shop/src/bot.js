@@ -246,7 +246,7 @@ export function createBot({ config, store, cemixgram }) {
       if (!response.ok) throw new Error(`panel ${response.status}`);
       const body = await response.json();
       if (!body?.token) throw new Error("no token");
-      await say(ctx, config, `{key} вход в админку (живёт 5 минут, одноразовый) • cemix\n\n${config.panelURL}/auth/bot?token=${body.token}`);
+      await say(ctx, config, `{key} вход в админку (живёт 5 минут, одноразовый) • cemix\n\n${config.panelPublicURL || config.panelURL}/auth/bot?token=${body.token}`);
     } catch (error) {
       await say(ctx, config, "😕 админка не отвечает — проверь позже • cemix");
     }
