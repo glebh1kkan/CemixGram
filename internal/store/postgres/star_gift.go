@@ -428,7 +428,7 @@ func (s *StarGiftStore) SetGiftPriceOverride(ctx context.Context, giftID int64, 
 		}
 		return nil
 	}
-	if price.Currency != domain.StarGiftCurrencyStars && price.Currency != domain.StarGiftCurrencyTON {
+	if price.Currency != domain.StarGiftCurrencyStars && !price.Currency.IsCrypto() {
 		return domain.ErrStarGiftInvalid
 	}
 	if price.Amount <= 0 {
@@ -440,6 +440,35 @@ ON CONFLICT(gift_id) DO UPDATE SET currency=EXCLUDED.currency, amount_nanoton=EX
 		giftID, string(price.Currency), price.Amount)
 	if err != nil {
 		return fmt.Errorf("set gift price override: %w", err)
+	}
+	return nil
+}
+
+// GiftSchedule returns the operator timetable for a gift (zero = all off).
+func (s *StarGiftStore) GiftSchedule(ctx context.Context, giftID int64) (domain.GiftSchedule, error) {
+	var schedule domain.GiftSchedule
+	err := s.db.QueryRow(ctx, `SELECT release_date, upgrade_attributes_date, upgrade_open_date FROM gift_schedule WHERE gift_id=$1`, giftID).
+		Scan(&schedule.ReleaseDate, &schedule.UpgradeAttributesDate, &schedule.UpgradeOpenDate)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.GiftSchedule{}, nil
+	}
+	if err != nil {
+		return domain.GiftSchedule{}, fmt.Errorf("read gift schedule: %w", err)
+	}
+	return schedule, nil
+}
+
+// SetGiftSchedule upserts the operator timetable for a gift.
+func (s *StarGiftStore) SetGiftSchedule(ctx context.Context, giftID int64, schedule domain.GiftSchedule) error {
+	if giftID <= 0 || !schedule.Valid() {
+		return domain.ErrStarGiftInvalid
+	}
+	_, err := s.db.Exec(ctx, `INSERT INTO gift_schedule(gift_id, release_date, upgrade_attributes_date, upgrade_open_date, updated_at)
+VALUES($1, $2, $3, $4, now())
+ON CONFLICT(gift_id) DO UPDATE SET release_date=EXCLUDED.release_date, upgrade_attributes_date=EXCLUDED.upgrade_attributes_date, upgrade_open_date=EXCLUDED.upgrade_open_date, updated_at=now()`,
+		giftID, schedule.ReleaseDate, schedule.UpgradeAttributesDate, schedule.UpgradeOpenDate)
+	if err != nil {
+		return fmt.Errorf("set gift schedule: %w", err)
 	}
 	return nil
 }

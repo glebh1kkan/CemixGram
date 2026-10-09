@@ -741,6 +741,14 @@ func (fakeService) GiftPrice(_ context.Context, giftID int64) (admin.GiftPriceRe
 	return admin.GiftPriceResult{GiftID: giftID, Currency: "XTR", AmountNanoton: 50}, nil
 }
 
+func (fakeService) SetGiftSchedule(_ context.Context, req admin.SetGiftScheduleRequest) (admin.CommandResult, error) {
+	return admin.CommandResult{CommandID: req.CommandID, Status: "completed", DryRun: req.DryRun}, nil
+}
+
+func (fakeService) GiftSchedule(_ context.Context, giftID int64) (admin.GiftScheduleResult, error) {
+	return admin.GiftScheduleResult{GiftID: giftID}, nil
+}
+
 func (fakeService) SetChannelVerified(_ context.Context, req admin.SetChannelVerifiedRequest) (admin.CommandResult, error) {
 	return admin.CommandResult{CommandID: req.CommandID, Status: "completed", DryRun: req.DryRun}, nil
 }

@@ -87,6 +87,8 @@ type Service interface {
 	SetStarGiftSortOrder(ctx context.Context, req admin.SetStarGiftSortOrderRequest) (admin.CommandResult, error)
 	SetGiftPrice(ctx context.Context, req admin.SetGiftPriceRequest) (admin.CommandResult, error)
 	GiftPrice(ctx context.Context, giftID int64) (admin.GiftPriceResult, error)
+	SetGiftSchedule(ctx context.Context, req admin.SetGiftScheduleRequest) (admin.CommandResult, error)
+	GiftSchedule(ctx context.Context, giftID int64) (admin.GiftScheduleResult, error)
 	GiveGift(ctx context.Context, req admin.GiveGiftRequest) (admin.CommandResult, error)
 	StarGiftAnimation(ctx context.Context, giftID int64) ([]byte, bool, error)
 	EmojiAnimation(ctx context.Context, documentID int64) ([]byte, bool, error)
@@ -278,6 +280,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /v1/gifts/set-sort-order", s.authenticated(s.handleSetStarGiftSortOrder))
 	mux.HandleFunc("POST /v1/gifts/set-price", s.authenticated(s.handleSetGiftPrice))
 	mux.HandleFunc("GET /v1/gifts/{id}/price", s.authenticated(s.handleGetGiftPrice))
+	mux.HandleFunc("POST /v1/gifts/set-schedule", s.authenticated(s.handleSetGiftSchedule))
+	mux.HandleFunc("GET /v1/gifts/{id}/schedule", s.authenticated(s.handleGetGiftSchedule))
 	mux.HandleFunc("POST /v1/gifts/give", s.authenticated(s.handleGiveGift))
 	mux.HandleFunc("GET /v1/gifts/{id}/animation", s.authenticated(s.handleStarGiftAnimation))
 	mux.HandleFunc("GET /v1/emoji/{id}/animation", s.authenticated(s.handleEmojiAnimation))
@@ -1187,6 +1191,29 @@ func (s *Server) handleGetGiftPrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := s.svc.GiftPrice(r.Context(), giftID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleSetGiftSchedule(w http.ResponseWriter, r *http.Request) {
+	var req admin.SetGiftScheduleRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	result, err := s.svc.SetGiftSchedule(r.Context(), req)
+	writeCommandResult(w, result, err)
+}
+
+func (s *Server) handleGetGiftSchedule(w http.ResponseWriter, r *http.Request) {
+	giftID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || giftID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid gift id")
+		return
+	}
+	result, err := s.svc.GiftSchedule(r.Context(), giftID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

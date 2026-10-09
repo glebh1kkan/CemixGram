@@ -494,7 +494,7 @@ func (r *Router) onPaymentsGetPaymentForm(ctx context.Context, req *tg.PaymentsG
 	if err != nil {
 		return nil, starGiftLifecycleErr(err)
 	}
-	if price.Currency == domain.StarGiftCurrencyTON && inv.IncludeUpgrade {
+	if price.Currency.IsCrypto() && inv.IncludeUpgrade {
 		return nil, starGiftInvalidErr()
 	}
 	now := int(r.clock.Now().Unix())
@@ -507,7 +507,9 @@ func (r *Router) onPaymentsGetPaymentForm(ctx context.Context, req *tg.PaymentsG
 		return nil, starGiftLifecycleErr(err)
 	}
 	invoiceCurrency := "XTR"
-	if price.Currency == domain.StarGiftCurrencyTON {
+	if price.Currency == domain.StarGiftCurrencyGRAM {
+		invoiceCurrency = "GRAM"
+	} else if price.Currency.IsCrypto() {
 		invoiceCurrency = "TON"
 	}
 	return &tg.PaymentsPaymentFormStarGift{
@@ -719,7 +721,7 @@ func (r *Router) onPaymentsSendStarsForm(ctx context.Context, req *tg.PaymentsSe
 	if err != nil {
 		return nil, starGiftLifecycleErr(err)
 	}
-	if price.Currency == domain.StarGiftCurrencyTON && inv.IncludeUpgrade {
+	if price.Currency.IsCrypto() && inv.IncludeUpgrade {
 		return nil, starGiftInvalidErr()
 	}
 	now := int(r.clock.Now().Unix())
@@ -740,7 +742,7 @@ func (r *Router) onPaymentsSendStarsForm(ctx context.Context, req *tg.PaymentsSe
 			return nil, err
 		}
 	}
-	if price.Currency == domain.StarGiftCurrencyTON {
+	if price.Currency.IsCrypto() {
 		if _, err := r.deps.Gifts.TonBalance(ctx, userID); err != nil {
 			return nil, internalErr()
 		}
@@ -748,7 +750,7 @@ func (r *Router) onPaymentsSendStarsForm(ctx context.Context, req *tg.PaymentsSe
 		return nil, starsErr(err)
 	}
 	if capability, ok := r.deps.Gifts.(interface{ AtomicPurchaseConfigured() bool }); ok && !capability.AtomicPurchaseConfigured() {
-		if price.Currency == domain.StarGiftCurrencyTON {
+		if price.Currency.IsCrypto() {
 			return nil, notImplementedErr()
 		}
 		if err := r.deps.Gifts.ValidatePurchaseForm(ctx, purchaseReq); err != nil {

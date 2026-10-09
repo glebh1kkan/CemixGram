@@ -432,7 +432,7 @@ func tgUniqueStarGift(unique domain.UniqueStarGift) *tg.StarGiftUnique {
 }
 
 func tgStarGiftAmount(amount domain.StarGiftAmount) tg.StarsAmountClass {
-	if amount.Currency == domain.StarGiftCurrencyTON {
+	if amount.Currency.IsCrypto() {
 		return &tg.StarsTonAmount{Amount: amount.Amount}
 	}
 	return &tg.StarsAmount{Amount: amount.Amount, Nanos: amount.Nanos}

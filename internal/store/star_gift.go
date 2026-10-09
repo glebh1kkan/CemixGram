@@ -25,6 +25,10 @@ type StarGiftStore interface {
 	SetCatalogSortOrder(ctx context.Context, giftID int64, sortOrder int) (bool, error)
 	// GiftPriceOverride returns the admin-set sale price (nil currency = none).
 	GiftPriceOverride(ctx context.Context, giftID int64) (domain.StarGiftAmount, bool, error)
+	// GiftSchedule returns the operator timetable (zero = all off).
+	GiftSchedule(ctx context.Context, giftID int64) (domain.GiftSchedule, error)
+	// SetGiftSchedule upserts the operator timetable.
+	SetGiftSchedule(ctx context.Context, giftID int64, schedule domain.GiftSchedule) error
 	// SetGiftPriceOverride upserts the admin-set sale price; nil clears it.
 	SetGiftPriceOverride(ctx context.Context, giftID int64, price *domain.StarGiftAmount) error
 	// AnimationJSON 返回当前版本的规范化 Lottie JSON，供管理后台安全预览。

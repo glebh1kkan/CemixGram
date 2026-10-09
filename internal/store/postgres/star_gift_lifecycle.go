@@ -838,7 +838,7 @@ func (s *StarGiftLifecycleStore) loadOfferByBuyerRandom(ctx context.Context, buy
 	}
 	offer.Gift = gift
 	var balance int64
-	if offer.Price.Currency == domain.StarGiftCurrencyTON {
+	if offer.Price.Currency.IsCrypto() {
 		_ = s.db.QueryRow(ctx, `SELECT balance_nanoton FROM ton_balances WHERE user_id=$1`, buyerUserID).Scan(&balance)
 	} else {
 		_ = s.db.QueryRow(ctx, `SELECT balance FROM stars_balances WHERE user_id=$1`, buyerUserID).Scan(&balance)
@@ -1273,7 +1273,7 @@ func (s *StarGiftLifecycleStore) debitLifecycleAmount(ctx context.Context, tx pg
 		}
 		return balance, err
 	}
-	if amount.Currency == domain.StarGiftCurrencyTON {
+	if amount.Currency.IsCrypto() {
 		if _, err := s.ensureTonGrantTx(ctx, tx, userID, date); err != nil {
 			return domain.StarsBalance{}, err
 		}
@@ -1311,7 +1311,7 @@ func (s *StarGiftLifecycleStore) debitLifecycleAmount(ctx context.Context, tx pg
 
 func (s *StarGiftLifecycleStore) creditLifecycleAmount(ctx context.Context, tx pgx.Tx, userID int64, amount domain.StarGiftAmount,
 	reason domain.StarsTransactionReason, peer domain.Peer, date int, title string) error {
-	if amount.Currency == domain.StarGiftCurrencyTON {
+	if amount.Currency.IsCrypto() {
 		if _, err := tx.Exec(ctx, `INSERT INTO ton_balances(user_id,balance_nanoton,granted) VALUES($1,$2,false)
 		 ON CONFLICT(user_id) DO UPDATE SET balance_nanoton=ton_balances.balance_nanoton+EXCLUDED.balance_nanoton,updated_at=now()`, userID, amount.Amount); err != nil {
 			return err
@@ -1337,7 +1337,7 @@ func (s *StarGiftLifecycleStore) creditPeerLifecycleAmount(ctx context.Context, 
 		return 0, 0, domain.ErrStarGiftResaleUnavailable
 	}
 	permille := s.market.StarsProceedsPermille
-	if amount.Currency == domain.StarGiftCurrencyTON {
+	if amount.Currency.IsCrypto() {
 		permille = s.market.TONProceedsPermille
 	}
 	proceeds := amount.Amount/1000*int64(permille) + amount.Amount%1000*int64(permille)/1000
@@ -1351,7 +1351,7 @@ func (s *StarGiftLifecycleStore) creditPeerLifecycleAmount(ctx context.Context, 
 			}
 		}
 		var balance int64
-		if amount.Currency == domain.StarGiftCurrencyTON {
+		if amount.Currency.IsCrypto() {
 			if err := tx.QueryRow(ctx, `SELECT COALESCE((SELECT balance_nanoton FROM ton_balances WHERE user_id=$1),0)`, owner.ID).Scan(&balance); err != nil {
 				return 0, 0, err
 			}
@@ -1362,7 +1362,7 @@ func (s *StarGiftLifecycleStore) creditPeerLifecycleAmount(ctx context.Context, 
 	}
 
 	var balance int64
-	if amount.Currency == domain.StarGiftCurrencyTON {
+	if amount.Currency.IsCrypto() {
 		if proceeds == 0 {
 			err := tx.QueryRow(ctx, `SELECT COALESCE((SELECT balance_nanoton FROM channel_ton_balances WHERE channel_id=$1),0)`, owner.ID).Scan(&balance)
 			return balance, commission, err

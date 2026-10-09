@@ -482,6 +482,10 @@ type StarGiftRow struct {
 	AvailabilityRemains int
 	CreatedBy           string
 	UpdatedAt           time.Time
+	// Effective sale price override (empty/zero = catalog Stars price).
+	PriceCurrency      string
+	PriceAmountNanoton int64 `json:"PriceAmountNanoton,string"`
+	PriceOverridden    bool
 }
 
 // GiftPriceOverride returns the admin sale price override for the panel.
@@ -496,6 +500,20 @@ func (s *readStore) GiftPriceOverride(ctx context.Context, giftID int64) (curren
 	return currency, amount, true, nil
 }
 
+// GiftSchedule returns the operator timetable for the panel (zero = all off).
+func (s *readStore) GiftSchedule(ctx context.Context, giftID int64) (domain.GiftSchedule, error) {
+	var schedule domain.GiftSchedule
+	err := s.pool.QueryRow(ctx, `SELECT release_date, upgrade_attributes_date, upgrade_open_date FROM gift_schedule WHERE gift_id=$1`, giftID).
+		Scan(&schedule.ReleaseDate, &schedule.UpgradeAttributesDate, &schedule.UpgradeOpenDate)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.GiftSchedule{}, nil
+	}
+	if err != nil {
+		return domain.GiftSchedule{}, err
+	}
+	return schedule, nil
+}
+
 func (s *readStore) ListStarGifts(ctx context.Context) ([]StarGiftRow, error) {
 	rows, err := s.pool.Query(ctx, `
 SELECT c.gift_id, r.id, r.revision, r.title, r.stars, r.convert_stars,
@@ -503,10 +521,12 @@ SELECT c.gift_id, r.id, r.revision, r.title, r.stars, r.convert_stars,
        encode(r.animation_sha256, 'hex'), d.size, r.width, r.height, r.frame_rate,
        (SELECT COUNT(*) FROM peer_star_gifts p WHERE p.gift_id = c.gift_id),
        r.limited, r.availability_total, c.availability_remains,
-       r.created_by, c.updated_at
+       r.created_by, c.updated_at,
+       COALESCE(o.currency, ''), COALESCE(o.amount_nanoton, 0), o.gift_id IS NOT NULL
 FROM star_gift_catalog c
 JOIN star_gift_catalog_revisions r ON r.id = c.active_revision_id
 JOIN documents d ON d.id = r.document_id
+LEFT JOIN gift_price_overrides o ON o.gift_id = c.gift_id
 ORDER BY c.sort_order, c.gift_id
 LIMIT $1`, domain.MaxStarGiftCatalogSize)
 	if err != nil {
@@ -522,6 +542,7 @@ LIMIT $1`, domain.MaxStarGiftCatalogSize)
 			&row.AnimationSHA, &row.AnimationSize, &row.Width, &row.Height, &row.FrameRate,
 			&row.ReceivedCount, &row.Limited, &row.AvailabilityTotal, &row.AvailabilityRemains,
 			&row.CreatedBy, &row.UpdatedAt,
+			&row.PriceCurrency, &row.PriceAmountNanoton, &row.PriceOverridden,
 		); err != nil {
 			return nil, err
 		}

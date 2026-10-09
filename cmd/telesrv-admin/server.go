@@ -174,6 +174,8 @@ func (s *server) routes() http.Handler {
 	mux.Handle("POST /api/actions/set-gift-sort-order", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleSetStarGiftSortOrderAPI)))
 	mux.Handle("POST /api/actions/set-gift-price", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleSetGiftPriceAPI)))
 	mux.Handle("GET /api/gifts/{id}/price", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleGetGiftPriceAPI)))
+	mux.Handle("POST /api/actions/set-gift-schedule", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleSetGiftScheduleAPI)))
+	mux.Handle("GET /api/gifts/{id}/schedule", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleGetGiftScheduleAPI)))
 	mux.Handle("POST /api/actions/give-gift", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleGiveGiftAPI)))
 	mux.Handle("POST /api/actions/mint-collectible-username", s.scopedRoute(permissionUsernamesManage, http.HandlerFunc(s.handleMintCollectibleUsernameAPI)))
 	mux.Handle("POST /api/actions/mint-collectible-phone", s.scopedRoute(permissionPhonesManage, http.HandlerFunc(s.handleMintCollectiblePhoneAPI)))
@@ -2237,6 +2239,12 @@ type importStarGiftAPIRequest struct {
 	AuctionRoundDuration int    `json:"auction_round_duration"`
 	AvailabilityTotal    int    `json:"availability_total"`
 	LockedUntilDate      int    `json:"locked_until_date"`
+	// Optional sale price override (TON/GRAM/XTR) applied with the import.
+	PriceCurrency      string `json:"price_currency"`
+	PriceAmountNanoton int64  `json:"price_amount_nanoton,string"`
+	// Upgrade timetable: attributes visibility + upgrade open dates.
+	UpgradeAttributesDate int64 `json:"upgrade_attributes_date"`
+	UpgradeOpenDate       int64 `json:"upgrade_open_date"`
 }
 
 func (s *server) handleImportStarGiftAPI(w http.ResponseWriter, r *http.Request) {
@@ -2290,6 +2298,10 @@ func (s *server) handleImportStarGiftAPI(w http.ResponseWriter, r *http.Request)
 		AuctionRoundDuration: body.AuctionRoundDuration,
 		AvailabilityTotal:    body.AvailabilityTotal,
 		LockedUntilDate:      body.LockedUntilDate,
+		PriceCurrency:        body.PriceCurrency,
+		PriceAmountNanoton:   body.PriceAmountNanoton,
+		UpgradeAttributesDate: body.UpgradeAttributesDate,
+		UpgradeOpenDate:       body.UpgradeOpenDate,
 	}
 	result, err := s.callAdminMultipart(r.Context(), "/v1/gifts/import", req, header.Filename, data)
 	writeCommandResultAPI(w, result, err)
@@ -2360,6 +2372,12 @@ type importOfficialStarGiftAPIRequest struct {
 	// Unix seconds at which the imported gift becomes purchasable. Zero keeps the
 	// snapshot's own release time.
 	LockedUntilDate int `json:"locked_until_date"`
+	// Optional sale price override (TON/GRAM/XTR) applied with the import.
+	PriceCurrency      string `json:"price_currency"`
+	PriceAmountNanoton int64  `json:"price_amount_nanoton,string"`
+	// Upgrade timetable: attributes visibility + upgrade open dates.
+	UpgradeAttributesDate int64 `json:"upgrade_attributes_date"`
+	UpgradeOpenDate       int64 `json:"upgrade_open_date"`
 }
 
 func (s *server) handleImportOfficialStarGiftAPI(w http.ResponseWriter, r *http.Request) {
@@ -2382,6 +2400,10 @@ func (s *server) handleImportOfficialStarGiftAPI(w http.ResponseWriter, r *http.
 		ReleasedBy:      body.ReleasedBy,
 		PerUserTotal:    body.PerUserTotal,
 		LockedUntilDate: body.LockedUntilDate,
+		PriceCurrency:        body.PriceCurrency,
+		PriceAmountNanoton:   body.PriceAmountNanoton,
+		UpgradeAttributesDate: body.UpgradeAttributesDate,
+		UpgradeOpenDate:       body.UpgradeOpenDate,
 	}
 	result, err := s.callAdminAPI(r.Context(), "/v1/official-gifts/import", req)
 	writeCommandResultAPI(w, result, err)
@@ -2539,6 +2561,53 @@ func (s *server) handleGetGiftPriceAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"gift_id": giftID, "currency": currency, "amount_nanoton": amount, "overridden": found,
+	})
+}
+
+type setGiftScheduleAPIRequest struct {
+	CommandID             string `json:"command_id"`
+	Reason                string `json:"reason"`
+	Confirm               bool   `json:"confirm"`
+	GiftID                int64  `json:"gift_id,string"`
+	ReleaseDate           int64  `json:"release_date"`
+	UpgradeAttributesDate int64  `json:"upgrade_attributes_date"`
+	UpgradeOpenDate       int64  `json:"upgrade_open_date"`
+}
+
+func (s *server) handleSetGiftScheduleAPI(w http.ResponseWriter, r *http.Request) {
+	var body setGiftScheduleAPIRequest
+	if !decodeAction(w, r, &body) {
+		return
+	}
+	req := admin.SetGiftScheduleRequest{
+		CommandMeta:           s.commandMetaFromAPI(r, body.CommandID, body.Reason, body.Confirm, "set-gift-schedule"),
+		GiftID:                body.GiftID,
+		ReleaseDate:           body.ReleaseDate,
+		UpgradeAttributesDate: body.UpgradeAttributesDate,
+		UpgradeOpenDate:       body.UpgradeOpenDate,
+	}
+	result, err := s.callAdminAPI(r.Context(), "/v1/gifts/set-schedule", req)
+	writeCommandResultAPI(w, result, err)
+}
+
+func (s *server) handleGetGiftScheduleAPI(w http.ResponseWriter, r *http.Request) {
+	giftID, err := parseInt64(r.PathValue("id"))
+	if err != nil || giftID <= 0 {
+		writeAPIError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if s.read == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "read store is not configured")
+		return
+	}
+	schedule, err := s.read.GiftSchedule(r.Context(), giftID)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"gift_id": giftID, "release_date": schedule.ReleaseDate,
+		"upgrade_attributes_date": schedule.UpgradeAttributesDate, "upgrade_open_date": schedule.UpgradeOpenDate,
 	})
 }
 

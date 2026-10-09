@@ -37,9 +37,9 @@ export function GiftPriceModal({ gift, onClose, onDone }: {
       .then((loaded) => {
       if (cancelled) return;
       setPrice(loaded);
-      setCurrency(loaded?.currency === "TON" ? "TON" : "XTR");
+      setCurrency(loaded?.currency === "TON" || loaded?.currency === "GRAM" ? loaded.currency : "XTR");
       if (loaded?.overridden) {
-        setAmount(loaded.currency === "TON" ? String(Number(loaded.amountNanoton) / 1e9) : String(loaded.amountNanoton));
+        setAmount(loaded.currency === "TON" || loaded.currency === "GRAM" ? String(Number(loaded.amountNanoton) / 1e9) : String(loaded.amountNanoton));
       } else {
         setAmount("");
       }
@@ -52,7 +52,7 @@ export function GiftPriceModal({ gift, onClose, onDone }: {
   function nanoton(): number | null {
     const value = Number(String(amount).replace(",", "."));
     if (!Number.isFinite(value) || value <= 0) return null;
-    if (currency === "TON") {
+    if (currency === "TON" || currency === "GRAM") {
       if (value < 0.000000001) return null;
       return Math.round(value * 1e9);
     }
@@ -61,7 +61,7 @@ export function GiftPriceModal({ gift, onClose, onDone }: {
   }
 
   const parsed = nanoton();
-  const unit = currency === "TON" ? t("gifts.priceGrams") : t("gifts.priceStars");
+  const unit = currency === "XTR" ? t("gifts.priceStars") : t("gifts.priceGrams");
 
   return createPortal(
     <div className="modal-backdrop" onClick={onClose}>
@@ -74,17 +74,18 @@ export function GiftPriceModal({ gift, onClose, onDone }: {
         <p className="muted">
           {t("gifts.priceCatalog", { stars: gift.Stars })}
           {price?.overridden
-            ? ` · ${t("gifts.priceOverride", { amount: price.currency === "TON" ? `${Number(price.amountNanoton) / 1e9} gram` : `${price.amountNanoton} ⭐` })}`
+            ? ` · ${t("gifts.priceOverride", { amount: price.currency === "XTR" ? `${price.amountNanoton} ⭐` : `${Number(price.amountNanoton) / 1e9} ${price.currency === "GRAM" ? "gram" : "TON"}` })}`
             : ` · ${t("gifts.priceNoOverride")}`}
         </p>
         <label><span>{t("gifts.priceCurrency")}</span>
           <select value={currency} onChange={(event) => setCurrency(event.target.value)}>
             <option value="XTR">⭐ {t("gifts.currencyStars")}</option>
-            <option value="TON">🪙 {t("gifts.currencyGrams")}</option>
+            <option value="TON">🪙 TON</option>
+            <option value="GRAM">💎 {t("gifts.currencyGrams")}</option>
           </select>
         </label>
         <label><span>{t("gifts.priceAmount", { unit })}</span>
-          <input type="number" min="0" step={currency === "TON" ? "0.1" : "1"} value={amount} onChange={(event) => setAmount(event.target.value)} />
+          <input type="number" min="0" step={currency === "XTR" ? "1" : "0.1"} value={amount} onChange={(event) => setAmount(event.target.value)} />
         </label>
         <div className="modal-actions">
           <ActionButton

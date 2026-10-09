@@ -190,12 +190,32 @@ func (s *Service) GiftPriceOverride(ctx context.Context, giftID int64) (domain.S
 }
 
 // SetGiftPrice stores or clears the admin sale price override (nil clears).
-// TON amounts are nanoton. It invalidates the catalog snapshot.
+// Crypto amounts (TON/GRAM) are nanoton. It invalidates the catalog snapshot.
 func (s *Service) SetGiftPrice(ctx context.Context, giftID int64, price *domain.StarGiftAmount) error {
 	if s == nil || s.store == nil {
 		return domain.ErrStarGiftUnavailable
 	}
 	if err := s.store.SetGiftPriceOverride(ctx, giftID, price); err != nil {
+		return err
+	}
+	s.InvalidateStarGiftCatalog()
+	return nil
+}
+
+// GiftSchedule returns the operator timetable for a gift (zero = all off).
+func (s *Service) GiftSchedule(ctx context.Context, giftID int64) (domain.GiftSchedule, error) {
+	if s == nil || s.store == nil {
+		return domain.GiftSchedule{}, domain.ErrStarGiftUnavailable
+	}
+	return s.store.GiftSchedule(ctx, giftID)
+}
+
+// SetGiftSchedule upserts the operator timetable and busts the catalog snapshot.
+func (s *Service) SetGiftSchedule(ctx context.Context, giftID int64, schedule domain.GiftSchedule) error {
+	if s == nil || s.store == nil {
+		return domain.ErrStarGiftUnavailable
+	}
+	if err := s.store.SetGiftSchedule(ctx, giftID, schedule); err != nil {
 		return err
 	}
 	s.InvalidateStarGiftCatalog()
@@ -530,6 +550,15 @@ func (s *Service) collectiblePreview(ctx context.Context, giftID int64, samplePe
 	if s == nil || s.store == nil || giftID <= 0 {
 		return domain.StarGiftUpgradePreview{}, false, nil
 	}
+	// Operator timetable gates upgrade pool visibility: until
+	// upgrade_attributes_date passes, previews stay hidden.
+	if schedule, err := s.store.GiftSchedule(ctx, giftID); err == nil {
+		if !schedule.UpgradeAttributesVisible(time.Now().Unix()) {
+			return domain.StarGiftUpgradePreview{}, false, nil
+		}
+	} else {
+		return domain.StarGiftUpgradePreview{}, false, err
+	}
 	revision, ok, err := s.store.ActiveCollectibleProjection(ctx, giftID, samplePerKind)
 	if err != nil || !ok || !revision.Published {
 		return domain.StarGiftUpgradePreview{}, false, err
@@ -593,6 +622,31 @@ func (s *Service) Upgrade(ctx context.Context, req domain.StarGiftUpgradeRequest
 		s.InvalidateStarGiftCatalog()
 	}
 	return result, err
+}
+
+// UpgradeAllowed reports whether the upgrade action is open per the operator
+// timetable. Callers pass the gift ID the saved gift belongs to.
+func (s *Service) UpgradeAllowed(ctx context.Context, giftID int64, now int64) (bool, error) {
+	if s == nil || s.store == nil {
+		return false, domain.ErrStarGiftUnavailable
+	}
+	schedule, err := s.store.GiftSchedule(ctx, giftID)
+	if err != nil {
+		return false, err
+	}
+	return schedule.UpgradeOpen(now), nil
+}
+
+// SaleAllowed reports whether the gift may be sold at now per its schedule.
+func (s *Service) SaleAllowed(ctx context.Context, giftID int64, now int64) (bool, error) {
+	if s == nil || s.store == nil {
+		return false, domain.ErrStarGiftUnavailable
+	}
+	schedule, err := s.store.GiftSchedule(ctx, giftID)
+	if err != nil {
+		return false, err
+	}
+	return schedule.SaleOpen(now), nil
 }
 
 func (s *Service) UpgradeReceipt(ctx context.Context, userID int64, commandKey string) (domain.StarGiftUpgradeReceipt, bool, error) {

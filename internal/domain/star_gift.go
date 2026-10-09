@@ -273,7 +273,17 @@ type StarGiftCurrency string
 const (
 	StarGiftCurrencyStars StarGiftCurrency = "XTR"
 	StarGiftCurrencyTON   StarGiftCurrency = "TON"
+	// StarGiftCurrencyGRAM is the Gram price unit. Ledger-backed exactly like
+	// TON (nanoton balances); kept as a distinct currency so operators can
+	// price a gift in TON or in Grams at authoring time.
+	StarGiftCurrencyGRAM StarGiftCurrency = "GRAM"
 )
+
+// IsCrypto reports whether the currency is charged from the nanoton ledger
+// (TON or GRAM) instead of the Stars wallet.
+func (c StarGiftCurrency) IsCrypto() bool {
+	return c == StarGiftCurrencyTON || c == StarGiftCurrencyGRAM
+}
 
 // MaxStarGiftAuctionBidStars caps a single auction bid so the bid ladder stays
 // inside the range official clients can represent. Telegram Desktop derives its
@@ -296,6 +306,37 @@ const MaxStarGiftAuctionBidStars int64 = 10_000_000
 // absolute hardcoded minimum.
 const StarGiftResaleFloorMultiple int64 = 10
 
+// GiftSchedule is the operator-controlled timetable of one catalog gift.
+// All fields are unix seconds, 0 = off (catalog defaults apply).
+type GiftSchedule struct {
+	// ReleaseDate gates the sale: the gift cannot be bought before it.
+	ReleaseDate int64
+	// UpgradeAttributesDate gates upgrade pool visibility (previews).
+	UpgradeAttributesDate int64
+	// UpgradeOpenDate gates the upgrade action itself.
+	UpgradeOpenDate int64
+}
+
+// Valid reports whether the timetable holds sane non-negative timestamps.
+func (s GiftSchedule) Valid() bool {
+	return s.ReleaseDate >= 0 && s.UpgradeAttributesDate >= 0 && s.UpgradeOpenDate >= 0
+}
+
+// SaleOpen reports whether the gift may be sold at now (unix seconds).
+func (s GiftSchedule) SaleOpen(now int64) bool {
+	return s.ReleaseDate <= 0 || now >= s.ReleaseDate
+}
+
+// UpgradeAttributesVisible reports whether upgrade previews may be shown.
+func (s GiftSchedule) UpgradeAttributesVisible(now int64) bool {
+	return s.UpgradeAttributesDate <= 0 || now >= s.UpgradeAttributesDate
+}
+
+// UpgradeOpen reports whether the upgrade action itself is allowed.
+func (s GiftSchedule) UpgradeOpen(now int64) bool {
+	return s.UpgradeOpenDate <= 0 || now >= s.UpgradeOpenDate
+}
+
 type StarGiftAmount struct {
 	Currency StarGiftCurrency
 	Amount   int64
@@ -309,7 +350,7 @@ func (a StarGiftAmount) Valid() bool {
 	switch a.Currency {
 	case StarGiftCurrencyStars:
 		return a.Nanos >= -999999999 && a.Nanos <= 999999999
-	case StarGiftCurrencyTON:
+	case StarGiftCurrencyTON, StarGiftCurrencyGRAM:
 		return a.Nanos == 0
 	default:
 		return false

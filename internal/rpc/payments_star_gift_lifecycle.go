@@ -101,7 +101,7 @@ func (r *Router) sendStarGiftResaleForm(ctx context.Context, userID, formID int6
 	if formID == 0 || formID != wantFormID {
 		return nil, starsFormAmountMismatchErr()
 	}
-	if amount.Currency == domain.StarGiftCurrencyTON {
+	if amount.Currency.IsCrypto() {
 		if _, err := r.deps.Gifts.TonBalance(ctx, userID); err != nil {
 			return nil, internalErr()
 		}
@@ -123,7 +123,7 @@ func (r *Router) sendStarGiftResaleForm(ctx context.Context, userID, formID int6
 	}
 	r.invalidateStarGiftOwner(gift.Owner)
 	r.invalidateStarGiftOwner(to)
-	return &tg.PaymentsPaymentResult{Updates: r.starGiftTransferUpdates(ctx, userID, result, amount.Currency == domain.StarGiftCurrencyTON)}, nil
+	return &tg.PaymentsPaymentResult{Updates: r.starGiftTransferUpdates(ctx, userID, result, amount.Currency.IsCrypto())}, nil
 }
 
 func (r *Router) starGiftResaleTarget(ctx context.Context, userID int64, inv *tg.InputInvoiceStarGiftResale) (domain.UniqueStarGift, domain.Peer, domain.StarGiftAmount, error) {
@@ -705,9 +705,9 @@ func (r *Router) onPaymentsResolveStarGiftOffer(ctx context.Context, req *tg.Pay
 	}
 	updates := r.starGiftSendUpdates(ctx, userID, result.Send)
 	if !req.Decline {
-		if result.Offer.Price.Currency == domain.StarGiftCurrencyTON {
+		if result.Offer.Price.Currency.IsCrypto() {
 			balance, _ := r.deps.Gifts.TonBalance(ctx, userID)
-			appendStarGiftBalanceUpdate(updates, domain.StarGiftCurrencyTON, balance)
+			appendStarGiftBalanceUpdate(updates, result.Offer.Price.Currency, balance)
 		} else if r.deps.Stars != nil {
 			balance, balanceErr := r.deps.Stars.GetBalance(ctx, userID)
 			if balanceErr == nil {
@@ -990,7 +990,9 @@ func appendStarGiftBalanceUpdate(updates *tg.Updates, currency domain.StarGiftCu
 		return
 	}
 	var amount tg.StarsAmountClass = &tg.StarsAmount{Amount: balance}
-	if currency == domain.StarGiftCurrencyTON {
+	if currency.IsCrypto() {
+		// No Gram constructor exists in this layer version; GRAM is
+		// ledger-backed exactly like TON and shares the Ton amount shape.
 		amount = &tg.StarsTonAmount{Amount: balance}
 	}
 	updates.Updates = append(updates.Updates, &tg.UpdateStarsBalance{Balance: amount})

@@ -59,6 +59,12 @@ func specToInput(spec string) (tg.InputStickerSetClass, string, error) {
 		return &tg.InputStickerSetPremiumGifts{}, "PremiumGifts", nil
 	case spec == "ton_gifts":
 		return &tg.InputStickerSetTonGifts{}, "TonGifts", nil
+	case strings.HasPrefix(spec, "dice:"):
+		emoticon := strings.TrimSpace(strings.TrimPrefix(spec, "dice:"))
+		if emoticon == "" {
+			return nil, "", fmt.Errorf("dice spec needs an emoticon, e.g. dice:\U0001F3B2")
+		}
+		return &tg.InputStickerSetDice{Emoticon: emoticon}, "Dice_" + emoticon, nil
 	default:
 		return nil, "", fmt.Errorf("unknown spec %q", spec)
 	}
@@ -161,7 +167,7 @@ func mapAttrs(in []tg.DocumentAttributeClass) []attrJSON {
 
 func main() {
 	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: SESSION=/tmp/appearance.session stickerfetch <out_dir> <spec> [spec...]\n  spec: short:<name> | emoji_default_statuses | emoji_channel_default_statuses | emoji_default_topic_icons | premium_gifts | ton_gifts | effects")
+		fmt.Fprintln(os.Stderr, "usage: SESSION=/tmp/appearance.session stickerfetch <out_dir> <spec> [spec...]\n  spec: short:<name> | emoji_default_statuses | emoji_channel_default_statuses | emoji_default_topic_icons | premium_gifts | ton_gifts | effects | dice:<emoji>")
 		os.Exit(2)
 	}
 	out := os.Args[1]

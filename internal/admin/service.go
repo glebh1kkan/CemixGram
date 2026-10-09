@@ -60,6 +60,7 @@ const (
 	ActionPublishGiftCollectibles = "gifts.collectibles.publish"
 	ActionSetStarGiftEnabled      = "gifts.set_enabled"
 	ActionSetGiftPrice            = "gifts.set_price"
+	ActionSetGiftSchedule         = "gifts.set_schedule"
 	ActionSetStarGiftSortOrder    = "gifts.set_sort_order"
 	ActionGiveGift                = "gifts.give"
 	ActionCreateBot               = "bot.create"
@@ -332,6 +333,8 @@ type GiftsService interface {
 	SalePrice(ctx context.Context, giftID int64) (domain.StarGiftAmount, error)
 	SetGiftPrice(ctx context.Context, giftID int64, price *domain.StarGiftAmount) error
 	GiftPriceOverride(ctx context.Context, giftID int64) (domain.StarGiftAmount, bool, error)
+	GiftSchedule(ctx context.Context, giftID int64) (domain.GiftSchedule, error)
+	SetGiftSchedule(ctx context.Context, giftID int64, schedule domain.GiftSchedule) error
 	AnimationJSON(ctx context.Context, giftID int64) ([]byte, bool, error)
 	CreateCollectibleRevision(ctx context.Context, write domain.StarGiftCollectibleWrite) (domain.StarGiftCollectibleRevision, error)
 	CollectiblePreview(ctx context.Context, giftID int64) (domain.StarGiftUpgradePreview, bool, error)
@@ -837,6 +840,17 @@ type ImportStarGiftRequest struct {
 	AuctionRoundDuration int    `json:"auction_round_duration,omitempty"`
 	AvailabilityTotal    int    `json:"availability_total,omitempty"`
 	LockedUntilDate      int    `json:"locked_until_date,omitempty"`
+
+	// PriceCurrency/PriceAmountNanoton optionally set the sale price override
+	// atomically with the import: "XTR" (stars), "TON" or "GRAM"
+	// (nanoton for TON/GRAM). Empty/zero keeps the catalog stars price.
+	PriceCurrency       string `json:"price_currency,omitempty"`
+	PriceAmountNanoton  int64  `json:"price_amount_nanoton,omitempty"`
+	// Upgrade timetable for the new gift: when the upgrade attributes become
+	// visible (previews) and when the upgrade action opens. Zero = off.
+	// The gift release itself stays LockedUntilDate above.
+	UpgradeAttributesDate int64 `json:"upgrade_attributes_date,omitempty"`
+	UpgradeOpenDate       int64 `json:"upgrade_open_date,omitempty"`
 }
 
 type ImportGiftPackRequest struct {
@@ -876,6 +890,14 @@ type ImportOfficialStarGiftRequest struct {
 	LockedUntilDate int      `json:"locked_until_date,omitempty"`
 	ManifestSHA256  string   `json:"manifest_sha256,omitempty"`
 	AssetSHA256     []string `json:"asset_sha256,omitempty"`
+
+	// PriceCurrency/PriceAmountNanoton optionally set the sale price override
+	// atomically with the import: "XTR" (stars), "TON" or "GRAM".
+	PriceCurrency      string `json:"price_currency,omitempty"`
+	PriceAmountNanoton int64  `json:"price_amount_nanoton,omitempty"`
+	// Upgrade timetable: attributes visibility date and upgrade open date.
+	UpgradeAttributesDate int64 `json:"upgrade_attributes_date,omitempty"`
+	UpgradeOpenDate       int64 `json:"upgrade_open_date,omitempty"`
 }
 
 type SetStarGiftEnabledRequest struct {
@@ -3713,6 +3735,120 @@ func (s *Service) resolveReleasedBy(ctx context.Context, raw string) (domain.Pee
 	return domain.Peer{Type: domain.PeerTypeUser, ID: userID}, nil
 }
 
+// parseImportPrice validates the optional sale-price override authored together
+// with a gift import. Empty currency + zero amount keeps the catalog price.
+func parseImportPrice(currency string, amount int64) (*domain.StarGiftAmount, error) {
+	currency = strings.ToUpper(strings.TrimSpace(currency))
+	if currency == "" && amount == 0 {
+		return nil, nil
+	}
+	cur := domain.StarGiftCurrency(currency)
+	if cur != domain.StarGiftCurrencyStars && !cur.IsCrypto() {
+		return nil, domain.ErrStarGiftInvalid
+	}
+	if amount <= 0 {
+		return nil, domain.ErrStarGiftInvalid
+	}
+	return &domain.StarGiftAmount{Currency: cur, Amount: amount}, nil
+}
+
+// parseImportSchedule validates the optional upgrade timetable authored with
+// an import. Non-zero dates must be in the future; release mirrors the
+// catalog locked_until_date passed in.
+func parseImportSchedule(release, attrs, open int64, now int64) (domain.GiftSchedule, error) {
+	schedule := domain.GiftSchedule{ReleaseDate: release, UpgradeAttributesDate: attrs, UpgradeOpenDate: open}
+	if !schedule.Valid() {
+		return domain.GiftSchedule{}, domain.ErrStarGiftInvalid
+	}
+	for _, date := range []int64{attrs, open} {
+		if date != 0 && date <= now {
+			return domain.GiftSchedule{}, fmt.Errorf("%w: upgrade schedule must be in the future", domain.ErrStarGiftLifecycleInvalid)
+		}
+	}
+	return schedule, nil
+}
+
+// applyImportExtras stores the import-time price override and upgrade
+// timetable after the catalog write committed. Dry-run callers never reach it.
+func (s *Service) applyImportExtras(ctx context.Context, giftID int64, price *domain.StarGiftAmount, schedule domain.GiftSchedule, details map[string]any) error {
+	if price != nil {
+		if err := s.gifts.SetGiftPrice(ctx, giftID, price); err != nil {
+			return err
+		}
+		details["price_currency"] = string(price.Currency)
+		details["price_amount_nanoton"] = price.Amount
+	}
+	if schedule != (domain.GiftSchedule{}) {
+		if err := s.gifts.SetGiftSchedule(ctx, giftID, schedule); err != nil {
+			return err
+		}
+		details["schedule_release_date"] = schedule.ReleaseDate
+		details["schedule_upgrade_attributes_date"] = schedule.UpgradeAttributesDate
+		details["schedule_upgrade_open_date"] = schedule.UpgradeOpenDate
+	}
+	return nil
+}
+
+// GiftScheduleResult is the operator timetable readable by the panel.
+type GiftScheduleResult struct {
+	GiftID                int64 `json:"gift_id"`
+	ReleaseDate           int64 `json:"release_date"`
+	UpgradeAttributesDate int64 `json:"upgrade_attributes_date"`
+	UpgradeOpenDate       int64 `json:"upgrade_open_date"`
+}
+
+// GiftSchedule returns the operator timetable for a gift.
+func (s *Service) GiftSchedule(ctx context.Context, giftID int64) (GiftScheduleResult, error) {
+	if s == nil || s.gifts == nil {
+		return GiftScheduleResult{}, fmt.Errorf("star gift service is not configured")
+	}
+	if giftID <= 0 {
+		return GiftScheduleResult{}, domain.ErrStarGiftInvalid
+	}
+	schedule, err := s.gifts.GiftSchedule(ctx, giftID)
+	if err != nil {
+		return GiftScheduleResult{}, err
+	}
+	return GiftScheduleResult{GiftID: giftID, ReleaseDate: schedule.ReleaseDate,
+		UpgradeAttributesDate: schedule.UpgradeAttributesDate, UpgradeOpenDate: schedule.UpgradeOpenDate}, nil
+}
+
+// SetGiftScheduleRequest upserts the operator timetable for a catalog gift.
+// Zero values disable that gate; non-zero values are unix seconds.
+type SetGiftScheduleRequest struct {
+	CommandMeta
+	GiftID                int64 `json:"gift_id"`
+	ReleaseDate           int64 `json:"release_date"`
+	UpgradeAttributesDate int64 `json:"upgrade_attributes_date"`
+	UpgradeOpenDate       int64 `json:"upgrade_open_date"`
+}
+
+// SetGiftSchedule stores the operator timetable and busts the catalog snapshot.
+func (s *Service) SetGiftSchedule(ctx context.Context, req SetGiftScheduleRequest) (CommandResult, error) {
+	if s == nil || s.gifts == nil {
+		return CommandResult{}, fmt.Errorf("star gift service is not configured")
+	}
+	details := map[string]any{"gift_id": req.GiftID, "release_date": req.ReleaseDate,
+		"upgrade_attributes_date": req.UpgradeAttributesDate, "upgrade_open_date": req.UpgradeOpenDate}
+	if req.GiftID <= 0 {
+		return CommandResult{}, domain.ErrStarGiftInvalid
+	}
+	schedule := domain.GiftSchedule{ReleaseDate: req.ReleaseDate,
+		UpgradeAttributesDate: req.UpgradeAttributesDate, UpgradeOpenDate: req.UpgradeOpenDate}
+	if !schedule.Valid() {
+		return CommandResult{}, domain.ErrStarGiftInvalid
+	}
+	return s.runCommand(ctx, req.CommandMeta, ActionSetGiftSchedule, 0, domain.Peer{}, req, func() (CommandResult, error) {
+		if req.DryRun {
+			return CommandResult{Message: "dry-run completed", Details: details}, nil
+		}
+		if err := s.gifts.SetGiftSchedule(ctx, req.GiftID, schedule); err != nil {
+			return CommandResult{}, err
+		}
+		return CommandResult{Message: "gift schedule updated", Details: details}, nil
+	})
+}
+
 // GiftPriceResult is the effective sale price readable by the panel.
 type GiftPriceResult struct {
 	GiftID        int64  `json:"gift_id"`
@@ -3746,14 +3882,14 @@ func (s *Service) GiftPrice(ctx context.Context, giftID int64) (GiftPriceResult,
 }
 
 // SetGiftPriceRequest sets (or clears, when Amount is 0) the admin sale price
-// override for a catalog gift. Currency is "XTR" (stars) or "TON", amount is
-// nanoton for TON. The override wins over the catalog revision price at
-// checkout; clearing restores the catalog price.
+// override for a catalog gift. Currency is "XTR" (stars), "TON" or "GRAM",
+// amount is nanoton for TON/GRAM. The override wins over the catalog revision
+// price at checkout; clearing restores the catalog price.
 type SetGiftPriceRequest struct {
 	CommandMeta
 	GiftID   int64  `json:"gift_id"`
 	Currency string `json:"currency"`
-	// AmountNanoton is stars for XTR, nanoton for TON. Zero clears the override.
+	// AmountNanoton is stars for XTR, nanoton for TON/GRAM. Zero clears the override.
 	AmountNanoton int64 `json:"amount_nanoton"`
 }
 
@@ -3770,7 +3906,7 @@ func (s *Service) SetGiftPrice(ctx context.Context, req SetGiftPriceRequest) (Co
 	}
 	var price *domain.StarGiftAmount
 	if req.AmountNanoton > 0 {
-		if currency != domain.StarGiftCurrencyStars && currency != domain.StarGiftCurrencyTON {
+		if currency != domain.StarGiftCurrencyStars && !currency.IsCrypto() {
 			return CommandResult{}, domain.ErrStarGiftInvalid
 		}
 		price = &domain.StarGiftAmount{Currency: currency, Amount: req.AmountNanoton}
@@ -3837,6 +3973,16 @@ func (s *Service) ImportStarGift(ctx context.Context, req ImportStarGiftRequest)
 	if err != nil {
 		return CommandResult{}, err
 	}
+	// Optional sale price (TON/GRAM/XTR override) and upgrade timetable,
+	// chosen by the operator on the same import form.
+	price, err := parseImportPrice(req.PriceCurrency, req.PriceAmountNanoton)
+	if err != nil {
+		return CommandResult{}, err
+	}
+	schedule, err := parseImportSchedule(int64(req.LockedUntilDate), req.UpgradeAttributesDate, req.UpgradeOpenDate, int64(now))
+	if err != nil {
+		return CommandResult{}, err
+	}
 	return s.runCommand(ctx, req.CommandMeta, ActionImportStarGift, 0, domain.Peer{}, req, func() (CommandResult, error) {
 		details := map[string]any{
 			"gift_id": strconv.FormatInt(req.GiftID, 10), "title": strings.TrimSpace(req.Title),
@@ -3869,6 +4015,15 @@ func (s *Service) ImportStarGift(ctx context.Context, req ImportStarGiftRequest)
 		if lifecycle.LockedUntilDate > 0 {
 			details["locked_until_date"] = lifecycle.LockedUntilDate
 		}
+		if price != nil {
+			details["price_currency"] = string(price.Currency)
+			details["price_amount_nanoton"] = price.Amount
+		}
+		if schedule != (domain.GiftSchedule{}) {
+			details["schedule_release_date"] = schedule.ReleaseDate
+			details["schedule_upgrade_attributes_date"] = schedule.UpgradeAttributesDate
+			details["schedule_upgrade_open_date"] = schedule.UpgradeOpenDate
+		}
 		if req.DryRun {
 			return CommandResult{Message: "star gift import validated", Details: details}, nil
 		}
@@ -3885,6 +4040,9 @@ func (s *Service) ImportStarGift(ctx context.Context, req ImportStarGiftRequest)
 			ReleasedBy: releasedBy, LimitedPerUser: req.PerUserTotal > 0, PerUserTotal: req.PerUserTotal,
 		})
 		if err != nil {
+			return CommandResult{Details: details}, err
+		}
+		if err := s.applyImportExtras(ctx, entry.Gift.ID, price, schedule, details); err != nil {
 			return CommandResult{Details: details}, err
 		}
 		details["gift_id"] = strconv.FormatInt(entry.Gift.ID, 10)
@@ -4015,6 +4173,14 @@ func (s *Service) ImportOfficialStarGift(ctx context.Context, req ImportOfficial
 				domain.ErrStarGiftLifecycleInvalid)
 		}
 		lockedUntilDate = req.LockedUntilDate
+	}
+	price, err := parseImportPrice(req.PriceCurrency, req.PriceAmountNanoton)
+	if err != nil {
+		return CommandResult{}, err
+	}
+	schedule, err := parseImportSchedule(int64(lockedUntilDate), req.UpgradeAttributesDate, req.UpgradeOpenDate, s.now().Unix())
+	if err != nil {
+		return CommandResult{}, err
 	}
 
 	// Auctions require finite inventory. For ordinary gifts, the base catalog is
@@ -4175,6 +4341,15 @@ func (s *Service) ImportOfficialStarGift(ctx context.Context, req ImportOfficial
 			details["locked_until_date"] = lockedUntilDate
 			details["locked_until_scheduled_by_operator"] = req.LockedUntilDate > 0
 		}
+		if price != nil {
+			details["price_currency"] = string(price.Currency)
+			details["price_amount_nanoton"] = price.Amount
+		}
+		if schedule != (domain.GiftSchedule{}) {
+			details["schedule_release_date"] = schedule.ReleaseDate
+			details["schedule_upgrade_attributes_date"] = schedule.UpgradeAttributesDate
+			details["schedule_upgrade_open_date"] = schedule.UpgradeOpenDate
+		}
 		if write.Catalog.Auction {
 			details["auction_availability_total"] = write.Catalog.AvailabilityTotal
 			details["auction_start_date"] = write.Catalog.AuctionStartDate
@@ -4203,6 +4378,9 @@ func (s *Service) ImportOfficialStarGift(ctx context.Context, req ImportOfficial
 		}
 		result, err := s.gifts.CreateCatalogBundle(ctx, write)
 		if err != nil {
+			return CommandResult{Details: details}, err
+		}
+		if err := s.applyImportExtras(ctx, result.Catalog.Gift.ID, price, schedule, details); err != nil {
 			return CommandResult{Details: details}, err
 		}
 		details["gift_id"] = strconv.FormatInt(result.Catalog.Gift.ID, 10)

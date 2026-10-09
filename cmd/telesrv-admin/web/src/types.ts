@@ -282,6 +282,9 @@ export type StarGiftRow = {
   AvailabilityRemains: number;
   CreatedBy: string;
   UpdatedAt: string;
+  PriceCurrency: string;
+  PriceAmountNanoton: string;
+  PriceOverridden: boolean;
 };
 
 export type StarGiftListResponse = { Gifts: StarGiftRow[] };

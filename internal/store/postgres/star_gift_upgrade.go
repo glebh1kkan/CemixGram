@@ -408,6 +408,14 @@ func (s *StarGiftUpgradeStore) UpgradeStarGift(ctx context.Context, req domain.S
 			if err != nil {
 				return err
 			}
+			// Operator timetable: upgrade_open_date gates the upgrade action.
+			var scheduleOpen int64
+			if err := tx.QueryRow(ctx, `SELECT COALESCE((SELECT upgrade_open_date FROM gift_schedule WHERE gift_id=$1),0)`, locked.GiftID).Scan(&scheduleOpen); err != nil {
+				return err
+			}
+			if scheduleOpen > 0 && int64(req.Date) < scheduleOpen {
+				return domain.ErrStarGiftCollectibleUnavailable
+			}
 			var craftable bool
 			if err := tx.QueryRow(ctx, `SELECT EXISTS (
 SELECT 1 FROM star_gift_collectible_models

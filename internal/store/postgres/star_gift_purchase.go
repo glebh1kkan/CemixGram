@@ -39,7 +39,7 @@ func (s *StarGiftLifecycleStore) IssueStarGiftPurchaseForm(ctx context.Context, 
 		if form.ChargeCurrency == "" {
 			form.ChargeCurrency = domain.StarGiftCurrencyStars
 		}
-		if form.ChargeCurrency != domain.StarGiftCurrencyStars && form.ChargeCurrency != domain.StarGiftCurrencyTON {
+		if form.ChargeCurrency != domain.StarGiftCurrencyStars && !form.ChargeCurrency.IsCrypto() {
 			return domain.StarGiftPurchaseForm{}, domain.ErrStarGiftFormPurposeInvalid
 		}
 		_, err := s.db.Exec(ctx, `INSERT INTO star_gift_purchase_forms(buyer_user_id,form_id,gift_id,revision_id,
@@ -336,9 +336,9 @@ func (s *StarGiftLifecycleStore) giftPriceOverrideTx(ctx context.Context, tx pgx
 }
 
 // debitStarGiftPurchaseAmount charges a purchase in the override currency:
-// XTR goes through the personal/bot stars wallets, TON through the TON ledger.
+// XTR goes through the personal/bot stars wallets, TON/GRAM through the TON ledger.
 func (s *StarGiftLifecycleStore) debitStarGiftPurchaseAmount(ctx context.Context, tx pgx.Tx, req domain.StarGiftPurchaseRequest, amount domain.StarGiftAmount) (domain.StarsBalance, error) {
-	if amount.Currency == domain.StarGiftCurrencyTON {
+	if amount.Currency.IsCrypto() {
 		if req.BuyerIsBot {
 			return domain.StarsBalance{}, domain.ErrStarGiftInvalid
 		}
@@ -418,6 +418,20 @@ func (s *StarGiftLifecycleStore) prepareStarGiftPurchase(ctx context.Context, tx
 		gift.Limited && remains <= 0 {
 		return domain.StarGift{}, domain.SavedStarGift{}, domain.StarsBalance{}, domain.ErrStarGiftInvalid
 	}
+	// Operator timetable: release_date gates the sale like locked_until_date.
+	var scheduleRelease, scheduleOpen int64
+	var scheduleAttrs int64
+	_ = scheduleAttrs
+	if err := tx.QueryRow(ctx, `SELECT release_date, upgrade_attributes_date, upgrade_open_date FROM gift_schedule WHERE gift_id=$1`, req.GiftID).
+		Scan(&scheduleRelease, &scheduleAttrs, &scheduleOpen); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return domain.StarGift{}, domain.SavedStarGift{}, domain.StarsBalance{}, err
+	}
+	if scheduleRelease > 0 && int64(req.Date) < scheduleRelease {
+		return domain.StarGift{}, domain.SavedStarGift{}, domain.StarsBalance{}, domain.ErrStarGiftInvalid
+	}
+	if req.IncludeUpgrade && scheduleOpen > 0 && int64(req.Date) < scheduleOpen {
+		return domain.StarGift{}, domain.SavedStarGift{}, domain.StarsBalance{}, domain.ErrStarGiftCollectibleUnavailable
+	}
 	if gift.RevisionID != req.RevisionID {
 		return domain.StarGift{}, domain.SavedStarGift{}, domain.StarsBalance{}, domain.ErrStarGiftFormAmountMismatch
 	}
@@ -453,7 +467,7 @@ func (s *StarGiftLifecycleStore) prepareStarGiftPurchase(ctx context.Context, tx
 	} else if found {
 		priceCurrency, priceAmount = override.Currency, override.Amount
 	}
-	if priceCurrency == domain.StarGiftCurrencyTON && req.IncludeUpgrade {
+	if priceCurrency.IsCrypto() && req.IncludeUpgrade {
 		return domain.StarGift{}, domain.SavedStarGift{}, domain.StarsBalance{}, domain.ErrStarGiftInvalid
 	}
 	reqCurrency := req.ChargeCurrency

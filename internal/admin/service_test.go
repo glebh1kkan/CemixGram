@@ -1983,6 +1983,12 @@ func (*fakeGiftsService) SetGiftPrice(context.Context, int64, *domain.StarGiftAm
 func (*fakeGiftsService) GiftPriceOverride(context.Context, int64) (domain.StarGiftAmount, bool, error) {
 	return domain.StarGiftAmount{}, false, nil
 }
+func (*fakeGiftsService) GiftSchedule(context.Context, int64) (domain.GiftSchedule, error) {
+	return domain.GiftSchedule{}, nil
+}
+func (*fakeGiftsService) SetGiftSchedule(context.Context, int64, domain.GiftSchedule) error {
+	return nil
+}
 func (*fakeGiftsService) AnimationJSON(context.Context, int64) ([]byte, bool, error) {
 	return []byte(`{"v":"5.7"}`), true, nil
 }

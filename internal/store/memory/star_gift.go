@@ -23,6 +23,7 @@ type StarGiftStore struct {
 	sortOrder        map[int64]int
 	animations       map[int64][]byte
 	priceOverrides   map[int64]domain.StarGiftAmount
+	schedules        map[int64]domain.GiftSchedule
 	collectibles     map[int64]domain.StarGiftCollectibleRevision
 	uniqueByID       map[int64]domain.UniqueStarGift
 	uniqueBySlug     map[string]int64
@@ -217,7 +218,7 @@ func (s *StarGiftStore) GiftPriceOverride(_ context.Context, giftID int64) (doma
 }
 
 func (s *StarGiftStore) SetGiftPriceOverride(_ context.Context, giftID int64, price *domain.StarGiftAmount) error {
-	if price != nil && price.Currency != domain.StarGiftCurrencyStars && price.Currency != domain.StarGiftCurrencyTON {
+	if price != nil && price.Currency != domain.StarGiftCurrencyStars && !price.Currency.IsCrypto() {
 		return domain.ErrStarGiftInvalid
 	}
 	if price != nil && price.Amount <= 0 {
@@ -233,6 +234,27 @@ func (s *StarGiftStore) SetGiftPriceOverride(_ context.Context, giftID int64, pr
 		s.priceOverrides = make(map[int64]domain.StarGiftAmount)
 	}
 	s.priceOverrides[giftID] = *price
+	return nil
+}
+
+// GiftSchedule returns the operator timetable (zero = all off).
+func (s *StarGiftStore) GiftSchedule(_ context.Context, giftID int64) (domain.GiftSchedule, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.schedules[giftID], nil
+}
+
+// SetGiftSchedule upserts the operator timetable.
+func (s *StarGiftStore) SetGiftSchedule(_ context.Context, giftID int64, schedule domain.GiftSchedule) error {
+	if giftID <= 0 || !schedule.Valid() {
+		return domain.ErrStarGiftInvalid
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.schedules == nil {
+		s.schedules = make(map[int64]domain.GiftSchedule)
+	}
+	s.schedules[giftID] = schedule
 	return nil
 }
 

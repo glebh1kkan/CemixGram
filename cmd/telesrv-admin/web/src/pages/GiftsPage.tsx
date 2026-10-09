@@ -12,6 +12,7 @@ import type { Navigate } from "../routing";
 import type { CommandResult, OfficialStarGiftRow, StarGiftRow } from "../types";
 import { GiftCollectiblesModal } from "./GiftCollectiblesModal";
 import { GiftPriceModal } from "./GiftPriceModal";
+import { GiftScheduleModal } from "./GiftScheduleModal";
 import { GiftPackModal } from "./GiftPackModal";
 
 type OfficialGiftCategory = "all" | "upgrade" | "craft" | "basic";
@@ -119,6 +120,12 @@ export function GiftsPage({ navigate }: { navigate: Navigate }) {
   const [roundDuration, setRoundDuration] = useState("3600");
   const [auctionStartAt, setAuctionStartAt] = useState("");
   const [unlockAt, setUnlockAt] = useState("");
+  // Sale price override chosen on the same form: XTR (stars), TON or GRAM.
+  const [priceCurrency, setPriceCurrency] = useState("XTR");
+  const [priceAmount, setPriceAmount] = useState("");
+  // Upgrade timetable: when attributes become visible and when upgrade opens.
+  const [upgradeAttrsAt, setUpgradeAttrsAt] = useState("");
+  const [upgradeOpenAt, setUpgradeOpenAt] = useState("");
   // The snapshot path carries its own scheduling state: the mode selector above
   // belongs to the upload form, and an official gift cannot be auctioned here.
   const [officialScheduled, setOfficialScheduled] = useState(false);
@@ -136,6 +143,7 @@ export function GiftsPage({ navigate }: { navigate: Navigate }) {
   const [error, setError] = useState("");
   const [importError, setImportError] = useState("");
   const [priceGift, setPriceGift] = useState<StarGiftRow | null>(null);
+  const [scheduleGift, setScheduleGift] = useState<StarGiftRow | null>(null);
 
   async function load() {
     setError("");
@@ -221,6 +229,31 @@ export function GiftsPage({ navigate }: { navigate: Navigate }) {
     return {};
   }
 
+  // Sale price override + upgrade timetable shared by both import paths.
+  // XTR amount is stars (integer); TON/GRAM amounts are decimal crypto units.
+  function pricePayload() {
+    const raw = priceAmount.trim();
+    if (!raw) return {};
+    const value = Number(raw.replace(",", "."));
+    if (!Number.isFinite(value) || value <= 0) throw new Error(t("gifts.priceInvalid"));
+    if (priceCurrency === "XTR") {
+      if (!Number.isInteger(value)) throw new Error(t("gifts.priceInvalid"));
+      return { price_currency: "XTR", price_amount_nanoton: String(value) };
+    }
+    if (priceCurrency !== "TON" && priceCurrency !== "GRAM") throw new Error(t("gifts.priceInvalid"));
+    return { price_currency: priceCurrency, price_amount_nanoton: String(Math.round(value * 1e9)) };
+  }
+
+  function schedulePayload(releaseDate: number) {
+    const attrs = toUnixSeconds(upgradeAttrsAt);
+    const open = toUnixSeconds(upgradeOpenAt);
+    const now = Math.floor(Date.now() / 1000);
+    if (attrs !== 0 && attrs <= now) throw new Error(t("gifts.schedule.past"));
+    if (open !== 0 && open <= now) throw new Error(t("gifts.schedule.past"));
+    void releaseDate;
+    return { upgrade_attributes_date: attrs, upgrade_open_date: open };
+  }
+
   function uploadForm(confirm: boolean, commandID = "") {
     if (!file) throw new Error(t("gifts.fileRequired"));
     if (!reason.trim()) throw new Error(t("action.reasonRequired"));
@@ -241,7 +274,9 @@ export function GiftsPage({ navigate }: { navigate: Navigate }) {
       released_by_peer: releasedBy.trim(),
       per_user_total: Number(perUserLimit),
       sort_order: Number(sortOrder),
-      ...lifecyclePayload()
+      ...lifecyclePayload(),
+      ...pricePayload(),
+      ...schedulePayload(toUnixSeconds(unlockAt))
     }));
     form.set("file", file, file.name);
     return form;
@@ -270,7 +305,9 @@ return {
 		sort_order: Number(sortOrder),
 		include_collectible: includeCollectible, upgrade_stars: upgradeStars,
 		supply_total: includeCollectible ? Number(supplyTotal) : 0, slug_prefix: slugPrefix.trim().toLowerCase(),
-		locked_until_date: lockedUntil
+		locked_until_date: lockedUntil,
+		...pricePayload(),
+		...schedulePayload(lockedUntil)
 	};
   }
 
@@ -314,6 +351,8 @@ return {
 	setGiftID("0"); setTitle(""); setStars("50"); setConvertStars("50"); setSortOrder("0");
     setEnabled(true); setSupportOnly(false); setPremium(false); setBirthday(false); setLimit("0"); setReleasedBy(""); setPerUserLimit("0"); setReason(""); setFile(null); setPreview(null); setImportError("");
     setImportSource("official"); setSourceGiftID(""); setOfficialQuery(""); setOfficialCategory("all"); setImportOpen(true);
+    setPriceCurrency("XTR"); setPriceAmount(""); setUpgradeAttrsAt(""); setUpgradeOpenAt("");
+    setLifecycleMode("regular"); setUnlockAt(""); setOfficialScheduled(false);
   }
 
   function startRevision(gift: StarGiftRow) {
@@ -353,12 +392,14 @@ return {
                 <td><LottiePreview giftID={gift.GiftID} revision={gift.Revision} compact /></td>
                 <td className="mono">{gift.GiftID} / {gift.Revision}</td>
                 <td><strong className="gift-table-title">{gift.Title || `Gift #${gift.GiftID}`}</strong><span className="gift-sort-order">{t("gifts.sortOrder")}: {gift.SortOrder}</span></td>
-                <td><strong className="gift-table-price">⭐ {gift.Stars}</strong><span className="gift-convert-price">→ {gift.ConvertStars}</span>{gift.Limited && <span className="gift-limited-badge">{t("gifts.limited.badge", { remains: gift.AvailabilityRemains, total: gift.AvailabilityTotal })}</span>}</td>
+                <td><strong className="gift-table-price">{gift.PriceOverridden
+                  ? (gift.PriceCurrency === "XTR" ? `⭐ ${gift.PriceAmountNanoton}` : `${Number(gift.PriceAmountNanoton) / 1e9} ${gift.PriceCurrency}`)
+                  : `⭐ ${gift.Stars}`}</strong><span className="gift-convert-price">→ {gift.ConvertStars}</span>{gift.PriceOverridden && <span className="gift-convert-price">каталог: ⭐ {gift.Stars}</span>}{gift.Limited && <span className="gift-limited-badge">{t("gifts.limited.badge", { remains: gift.AvailabilityRemains, total: gift.AvailabilityTotal })}</span>}</td>
                 <td><Badge>{gift.SourceFormat}</Badge><span className="gift-source-size">{formatBytes(gift.AnimationSize)}</span></td>
                 <td>{gift.ReceivedCount}</td>
                 <td><Badge tone={gift.Enabled ? "good" : "neutral"}>{gift.Enabled ? t("common.enabled") : t("common.disabled")}</Badge></td>
                 <td>{formatDate(gift.UpdatedAt)}</td>
-                <td><div className="gift-table-actions"><button className="btn compact-btn collectible-button" type="button" onClick={() => setCollectibleGift(gift)}><Gem size={13} />{t("collectibles.manage")}</button><button className="btn compact-btn" type="button" onClick={() => startRevision(gift)}>{t("gifts.replace")}</button><button className="btn compact-btn" type="button" onClick={() => setPriceGift(gift)}>💰 {t("gifts.setPrice")}</button><ActionButton compact tone="neutral" label={gift.Enabled ? t("gifts.disable") : t("gifts.enable")} path="/api/actions/set-gift-enabled" payload={() => ({ gift_id: gift.GiftID, enabled: !gift.Enabled })} onDone={() => void load()} /></div></td>
+                <td><div className="gift-table-actions"><button className="btn compact-btn collectible-button" type="button" onClick={() => setCollectibleGift(gift)}><Gem size={13} />{t("collectibles.manage")}</button><button className="btn compact-btn" type="button" onClick={() => startRevision(gift)}>{t("gifts.replace")}</button><button className="btn compact-btn" type="button" onClick={() => setPriceGift(gift)}>💰 {t("gifts.setPrice")}</button><button className="btn compact-btn" type="button" onClick={() => setScheduleGift(gift)}>🗓 {t("gifts.setSchedule")}</button><ActionButton compact tone="neutral" label={gift.Enabled ? t("gifts.disable") : t("gifts.enable")} path="/api/actions/set-gift-enabled" payload={() => ({ gift_id: gift.GiftID, enabled: !gift.Enabled })} onDone={() => void load()} /></div></td>
               </tr>
             ))}
             {visibleGifts.length === 0 && <EmptyRow colSpan={9} />}
@@ -456,6 +497,28 @@ return {
               </div>
               <label className="gift-switch"><input type="checkbox" checked={premium} onChange={(e) => { setPremium(e.target.checked); setPreview(null); }} /><span className="gift-switch-track" aria-hidden="true"><span /></span><span>{t("gifts.premium")}</span></label>
               <label className="gift-switch"><input type="checkbox" checked={birthday} onChange={(e) => { setBirthday(e.target.checked); setPreview(null); }} /><span className="gift-switch-track" aria-hidden="true"><span /></span><span>{t("gifts.birthday")}</span></label>
+              <section className="gift-lifecycle">
+                <span className="gift-field-label">{t("gifts.salePrice.label")}</span>
+                <div className="gift-import-note"><span>{t("gifts.salePrice.hint")}</span></div>
+                <div className="gift-fields-grid">
+                  <label><span>{t("gifts.priceCurrency")}</span>
+                    <select value={priceCurrency} onChange={(e) => { setPriceCurrency(e.target.value); setPreview(null); }}>
+                      <option value="XTR">⭐ {t("gifts.currencyStars")}</option>
+                      <option value="TON">🪙 TON</option>
+                      <option value="GRAM">💎 {t("gifts.currencyGrams")}</option>
+                    </select>
+                  </label>
+                  <label><span>{t("gifts.salePrice.amount")}</span><input type="number" min="0" step={priceCurrency === "XTR" ? "1" : "0.1"} value={priceAmount} placeholder={t("gifts.salePrice.placeholder")} onChange={(e) => { setPriceAmount(e.target.value); setPreview(null); }} /></label>
+                </div>
+              </section>
+              <section className="gift-lifecycle">
+                <span className="gift-field-label">{t("gifts.schedule.label")}</span>
+                <div className="gift-import-note"><span>{t("gifts.schedule.hint")}</span></div>
+                <div className="gift-fields-grid">
+                  <label><span>{t("gifts.schedule.attrsAt")}</span><input type="datetime-local" value={upgradeAttrsAt} onChange={(e) => { setUpgradeAttrsAt(e.target.value); setPreview(null); }} /></label>
+                  <label><span>{t("gifts.schedule.openAt")}</span><input type="datetime-local" value={upgradeOpenAt} onChange={(e) => { setUpgradeOpenAt(e.target.value); setPreview(null); }} /></label>
+                </div>
+              </section>
               {importSource === "file" ? <section className="gift-lifecycle">
                 <span className="gift-field-label">{t("gifts.lifecycle.label")}</span>
                 <div className="gift-source-tabs" role="group" aria-label={t("gifts.lifecycle.label")}>
@@ -509,6 +572,7 @@ return {
       {collectibleGift && <GiftCollectiblesModal gift={collectibleGift} onClose={() => setCollectibleGift(null)} onPublished={() => void load()} />}
       {packOpen && <GiftPackModal onClose={() => setPackOpen(false)} onImported={() => void load()} />}
       {priceGift && <GiftPriceModal gift={priceGift} onClose={() => setPriceGift(null)} onDone={() => void load()} />}
+      {scheduleGift && <GiftScheduleModal gift={scheduleGift} onClose={() => setScheduleGift(null)} onDone={() => void load()} />}
     </PageFrame>
   );
 }
