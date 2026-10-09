@@ -258,6 +258,47 @@ func (s *StarGiftStore) SetGiftSchedule(_ context.Context, giftID int64, schedul
 	return nil
 }
 
+// DeleteCatalogGift hard-deletes a catalog gift. Live in-memory references
+// (saved instances, uniques) block it like the PostgreSQL RESTRICT guards.
+func (s *StarGiftStore) DeleteCatalogGift(_ context.Context, giftID int64) (domain.StarGiftDeleteResult, error) {
+	if giftID <= 0 {
+		return domain.StarGiftDeleteResult{}, domain.ErrStarGiftInvalid
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.catalog[giftID]; !ok {
+		return domain.StarGiftDeleteResult{}, domain.ErrStarGiftInvalid
+	}
+	for _, g := range s.gifts {
+		if g.GiftID == giftID && g.LifecycleStatus.Live() {
+			return domain.StarGiftDeleteResult{}, domain.ErrStarGiftDeleteBlocked
+		}
+	}
+	for _, unique := range s.uniqueByID {
+		if unique.GiftID == giftID && !unique.Burned {
+			return domain.StarGiftDeleteResult{}, domain.ErrStarGiftDeleteBlocked
+		}
+	}
+	result := domain.StarGiftDeleteResult{GiftID: giftID}
+	if revision, ok := s.collectibles[giftID]; ok {
+		result.Collectibles = revision.Revision
+		delete(s.collectibles, giftID)
+	}
+	for revisionID, gift := range s.revisions {
+		if gift.ID == giftID {
+			result.Revisions++
+			delete(s.revisions, revisionID)
+		}
+	}
+	delete(s.catalog, giftID)
+	delete(s.enabled, giftID)
+	delete(s.sortOrder, giftID)
+	delete(s.animations, giftID)
+	delete(s.priceOverrides, giftID)
+	delete(s.schedules, giftID)
+	return result, nil
+}
+
 func (s *StarGiftStore) AnimationJSON(_ context.Context, giftID int64) ([]byte, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -176,6 +176,7 @@ func (s *server) routes() http.Handler {
 	mux.Handle("GET /api/gifts/{id}/price", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleGetGiftPriceAPI)))
 	mux.Handle("POST /api/actions/set-gift-schedule", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleSetGiftScheduleAPI)))
 	mux.Handle("GET /api/gifts/{id}/schedule", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleGetGiftScheduleAPI)))
+	mux.Handle("POST /api/actions/delete-gift", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleDeleteGiftAPI)))
 	mux.Handle("POST /api/actions/give-gift", s.scopedRoute(permissionGiftsManage, http.HandlerFunc(s.handleGiveGiftAPI)))
 	mux.Handle("POST /api/actions/mint-collectible-username", s.scopedRoute(permissionUsernamesManage, http.HandlerFunc(s.handleMintCollectibleUsernameAPI)))
 	mux.Handle("POST /api/actions/mint-collectible-phone", s.scopedRoute(permissionPhonesManage, http.HandlerFunc(s.handleMintCollectiblePhoneAPI)))
@@ -2609,6 +2610,26 @@ func (s *server) handleGetGiftScheduleAPI(w http.ResponseWriter, r *http.Request
 		"gift_id": giftID, "release_date": schedule.ReleaseDate,
 		"upgrade_attributes_date": schedule.UpgradeAttributesDate, "upgrade_open_date": schedule.UpgradeOpenDate,
 	})
+}
+
+type deleteGiftAPIRequest struct {
+	CommandID string `json:"command_id"`
+	Reason    string `json:"reason"`
+	Confirm   bool   `json:"confirm"`
+	GiftID    int64  `json:"gift_id,string"`
+}
+
+func (s *server) handleDeleteGiftAPI(w http.ResponseWriter, r *http.Request) {
+	var body deleteGiftAPIRequest
+	if !decodeAction(w, r, &body) {
+		return
+	}
+	req := admin.DeleteGiftRequest{
+		CommandMeta: s.commandMetaFromAPI(r, body.CommandID, body.Reason, body.Confirm, "delete-gift"),
+		GiftID:      body.GiftID,
+	}
+	result, err := s.callAdminAPI(r.Context(), "/v1/gifts/delete", req)
+	writeCommandResultAPI(w, result, err)
 }
 
 func (s *server) handleSetStarGiftSortOrderAPI(w http.ResponseWriter, r *http.Request) {

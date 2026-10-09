@@ -222,6 +222,19 @@ func (s *Service) SetGiftSchedule(ctx context.Context, giftID int64, schedule do
 	return nil
 }
 
+// DeleteCatalogGift hard-deletes a catalog gift and busts the snapshot.
+func (s *Service) DeleteCatalogGift(ctx context.Context, giftID int64) (domain.StarGiftDeleteResult, error) {
+	if s == nil || s.store == nil {
+		return domain.StarGiftDeleteResult{}, domain.ErrStarGiftUnavailable
+	}
+	result, err := s.store.DeleteCatalogGift(ctx, giftID)
+	if err != nil {
+		return domain.StarGiftDeleteResult{}, err
+	}
+	s.InvalidateStarGiftCatalog()
+	return result, nil
+}
+
 func (s *Service) CatalogHash(ctx context.Context) (int, error) {
 	if err := s.ensureCatalog(ctx); err != nil {
 		return 0, err

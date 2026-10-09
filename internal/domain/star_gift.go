@@ -1237,7 +1237,19 @@ var (
 	// ErrStarGiftIdempotencyConflict 同一个 command_key 落在另一个礼物请求上（收礼人、
 	// 礼物、升级或文本任一不同）：这种重放必须报错，不能返回别人的成功结果。
 	ErrStarGiftIdempotencyConflict = errors.New("stargift: idempotency key conflict")
+	// ErrStarGiftDeleteBlocked means the catalog gift still has live references
+	// (received instances, uniques, purchase commands, listings...) and cannot
+	// be hard-deleted. Disable it instead.
+	ErrStarGiftDeleteBlocked = errors.New("stargift: delete blocked by live references")
 )
+
+// StarGiftDeleteResult reports what a catalog hard-delete removed.
+type StarGiftDeleteResult struct {
+	GiftID       int64
+	Revisions    int
+	Collectibles int
+	Documents    int
+}
 
 var starGiftCollectibleSlugPrefix = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,47}$`)
 

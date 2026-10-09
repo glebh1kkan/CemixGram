@@ -89,6 +89,7 @@ type Service interface {
 	GiftPrice(ctx context.Context, giftID int64) (admin.GiftPriceResult, error)
 	SetGiftSchedule(ctx context.Context, req admin.SetGiftScheduleRequest) (admin.CommandResult, error)
 	GiftSchedule(ctx context.Context, giftID int64) (admin.GiftScheduleResult, error)
+	DeleteGift(ctx context.Context, req admin.DeleteGiftRequest) (admin.CommandResult, error)
 	GiveGift(ctx context.Context, req admin.GiveGiftRequest) (admin.CommandResult, error)
 	StarGiftAnimation(ctx context.Context, giftID int64) ([]byte, bool, error)
 	EmojiAnimation(ctx context.Context, documentID int64) ([]byte, bool, error)
@@ -282,6 +283,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /v1/gifts/{id}/price", s.authenticated(s.handleGetGiftPrice))
 	mux.HandleFunc("POST /v1/gifts/set-schedule", s.authenticated(s.handleSetGiftSchedule))
 	mux.HandleFunc("GET /v1/gifts/{id}/schedule", s.authenticated(s.handleGetGiftSchedule))
+	mux.HandleFunc("POST /v1/gifts/delete", s.authenticated(s.handleDeleteGift))
 	mux.HandleFunc("POST /v1/gifts/give", s.authenticated(s.handleGiveGift))
 	mux.HandleFunc("GET /v1/gifts/{id}/animation", s.authenticated(s.handleStarGiftAnimation))
 	mux.HandleFunc("GET /v1/emoji/{id}/animation", s.authenticated(s.handleEmojiAnimation))
@@ -1219,6 +1221,15 @@ func (s *Server) handleGetGiftSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleDeleteGift(w http.ResponseWriter, r *http.Request) {
+	var req admin.DeleteGiftRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	result, err := s.svc.DeleteGift(r.Context(), req)
+	writeCommandResult(w, result, err)
 }
 
 func (s *Server) handleGiveGift(w http.ResponseWriter, r *http.Request) {

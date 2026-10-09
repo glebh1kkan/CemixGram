@@ -23,6 +23,9 @@ type StarGiftStore interface {
 	CreateCatalogBundle(ctx context.Context, write domain.StarGiftCatalogBundleWrite) (domain.StarGiftCatalogBundleResult, error)
 	SetCatalogEnabled(ctx context.Context, giftID int64, enabled bool) (bool, error)
 	SetCatalogSortOrder(ctx context.Context, giftID int64, sortOrder int) (bool, error)
+	// DeleteCatalogGift hard-deletes a catalog gift and its revisions/pools.
+	// It fails with domain.ErrStarGiftDeleteBlocked when live references exist.
+	DeleteCatalogGift(ctx context.Context, giftID int64) (domain.StarGiftDeleteResult, error)
 	// GiftPriceOverride returns the admin-set sale price (nil currency = none).
 	GiftPriceOverride(ctx context.Context, giftID int64) (domain.StarGiftAmount, bool, error)
 	// GiftSchedule returns the operator timetable (zero = all off).

@@ -145,6 +145,21 @@ export function GiftsPage({ navigate }: { navigate: Navigate }) {
   const [priceGift, setPriceGift] = useState<StarGiftRow | null>(null);
   const [scheduleGift, setScheduleGift] = useState<StarGiftRow | null>(null);
 
+  async function removeGift(gift: StarGiftRow) {
+    if (!window.confirm(t("gifts.deleteConfirm", { id: gift.GiftID }))) return;
+    try {
+      const response = await fetch("/api/actions/delete-gift", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gift_id: gift.GiftID, command_id: `delete-${gift.GiftID}-${Date.now()}`, reason: "deleted from gifts panel", confirm: true })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await load();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
   async function load() {
     setError("");
     try {
@@ -399,7 +414,7 @@ return {
                 <td>{gift.ReceivedCount}</td>
                 <td><Badge tone={gift.Enabled ? "good" : "neutral"}>{gift.Enabled ? t("common.enabled") : t("common.disabled")}</Badge></td>
                 <td>{formatDate(gift.UpdatedAt)}</td>
-                <td><div className="gift-table-actions"><button className="btn compact-btn collectible-button" type="button" onClick={() => setCollectibleGift(gift)}><Gem size={13} />{t("collectibles.manage")}</button><button className="btn compact-btn" type="button" onClick={() => startRevision(gift)}>{t("gifts.replace")}</button><button className="btn compact-btn" type="button" onClick={() => setPriceGift(gift)}>💰 {t("gifts.setPrice")}</button><button className="btn compact-btn" type="button" onClick={() => setScheduleGift(gift)}>🗓 {t("gifts.setSchedule")}</button><ActionButton compact tone="neutral" label={gift.Enabled ? t("gifts.disable") : t("gifts.enable")} path="/api/actions/set-gift-enabled" payload={() => ({ gift_id: gift.GiftID, enabled: !gift.Enabled })} onDone={() => void load()} /></div></td>
+                <td><div className="gift-table-actions"><button className="btn compact-btn collectible-button" type="button" onClick={() => setCollectibleGift(gift)}><Gem size={13} />{t("collectibles.manage")}</button><button className="btn compact-btn" type="button" onClick={() => startRevision(gift)}>{t("gifts.replace")}</button><button className="btn compact-btn" type="button" onClick={() => setPriceGift(gift)}>💰 {t("gifts.setPrice")}</button><button className="btn compact-btn" type="button" onClick={() => setScheduleGift(gift)}>🗓 {t("gifts.setSchedule")}</button><button className="btn compact-btn" type="button" onClick={() => void removeGift(gift)}>🗑 {t("gifts.delete")}</button><ActionButton compact tone="neutral" label={gift.Enabled ? t("gifts.disable") : t("gifts.enable")} path="/api/actions/set-gift-enabled" payload={() => ({ gift_id: gift.GiftID, enabled: !gift.Enabled })} onDone={() => void load()} /></div></td>
               </tr>
             ))}
             {visibleGifts.length === 0 && <EmptyRow colSpan={9} />}

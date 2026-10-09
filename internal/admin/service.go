@@ -61,6 +61,7 @@ const (
 	ActionSetStarGiftEnabled      = "gifts.set_enabled"
 	ActionSetGiftPrice            = "gifts.set_price"
 	ActionSetGiftSchedule         = "gifts.set_schedule"
+	ActionDeleteGift              = "gifts.delete"
 	ActionSetStarGiftSortOrder    = "gifts.set_sort_order"
 	ActionGiveGift                = "gifts.give"
 	ActionCreateBot               = "bot.create"
@@ -335,6 +336,7 @@ type GiftsService interface {
 	GiftPriceOverride(ctx context.Context, giftID int64) (domain.StarGiftAmount, bool, error)
 	GiftSchedule(ctx context.Context, giftID int64) (domain.GiftSchedule, error)
 	SetGiftSchedule(ctx context.Context, giftID int64, schedule domain.GiftSchedule) error
+	DeleteCatalogGift(ctx context.Context, giftID int64) (domain.StarGiftDeleteResult, error)
 	AnimationJSON(ctx context.Context, giftID int64) ([]byte, bool, error)
 	CreateCollectibleRevision(ctx context.Context, write domain.StarGiftCollectibleWrite) (domain.StarGiftCollectibleRevision, error)
 	CollectiblePreview(ctx context.Context, giftID int64) (domain.StarGiftUpgradePreview, bool, error)
@@ -3846,6 +3848,37 @@ func (s *Service) SetGiftSchedule(ctx context.Context, req SetGiftScheduleReques
 			return CommandResult{}, err
 		}
 		return CommandResult{Message: "gift schedule updated", Details: details}, nil
+	})
+}
+
+// DeleteGiftRequest hard-deletes one catalog gift with its revisions and
+// upgrade pools. Blocked when live references exist (use disable instead).
+type DeleteGiftRequest struct {
+	CommandMeta
+	GiftID int64 `json:"gift_id"`
+}
+
+// DeleteGift removes a catalog gift and busts the catalog snapshot.
+func (s *Service) DeleteGift(ctx context.Context, req DeleteGiftRequest) (CommandResult, error) {
+	if s == nil || s.gifts == nil {
+		return CommandResult{}, fmt.Errorf("star gift service is not configured")
+	}
+	details := map[string]any{"gift_id": req.GiftID}
+	if req.GiftID <= 0 {
+		return CommandResult{}, domain.ErrStarGiftInvalid
+	}
+	return s.runCommand(ctx, req.CommandMeta, ActionDeleteGift, 0, domain.Peer{}, req, func() (CommandResult, error) {
+		if req.DryRun {
+			return CommandResult{Message: "dry-run completed", Details: details}, nil
+		}
+		result, err := s.gifts.DeleteCatalogGift(ctx, req.GiftID)
+		if err != nil {
+			return CommandResult{}, err
+		}
+		details["revisions"] = result.Revisions
+		details["collectibles"] = result.Collectibles
+		details["documents"] = result.Documents
+		return CommandResult{Message: "gift deleted", Details: details}, nil
 	})
 }
 

@@ -1989,6 +1989,9 @@ func (*fakeGiftsService) GiftSchedule(context.Context, int64) (domain.GiftSchedu
 func (*fakeGiftsService) SetGiftSchedule(context.Context, int64, domain.GiftSchedule) error {
 	return nil
 }
+func (*fakeGiftsService) DeleteCatalogGift(context.Context, int64) (domain.StarGiftDeleteResult, error) {
+	return domain.StarGiftDeleteResult{}, nil
+}
 func (*fakeGiftsService) AnimationJSON(context.Context, int64) ([]byte, bool, error) {
 	return []byte(`{"v":"5.7"}`), true, nil
 }

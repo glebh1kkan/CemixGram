@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"telesrv/internal/domain"
 	"telesrv/internal/store/postgres/sqlcgen"
@@ -471,6 +472,161 @@ ON CONFLICT(gift_id) DO UPDATE SET release_date=EXCLUDED.release_date, upgrade_a
 		return fmt.Errorf("set gift schedule: %w", err)
 	}
 	return nil
+}
+
+// DeleteCatalogGift hard-deletes a catalog gift with all its revisions and
+// upgrade pools. Live user data (received instances, uniques, purchase history,
+// auctions, per-user counters) blocks the delete with
+// domain.ErrStarGiftDeleteBlocked — disable the gift instead. Orphaned media
+// blobs are intentionally left for content GC; only unreferenced documents are
+// removed.
+func (s *StarGiftStore) DeleteCatalogGift(ctx context.Context, giftID int64) (domain.StarGiftDeleteResult, error) {
+	if giftID <= 0 {
+		return domain.StarGiftDeleteResult{}, domain.ErrStarGiftInvalid
+	}
+	result := domain.StarGiftDeleteResult{GiftID: giftID}
+	err := withTx(ctx, s.db, "delete star gift catalog gift", func(tx pgx.Tx) error {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM star_gift_catalog WHERE gift_id=$1)`, giftID).Scan(&exists); err != nil {
+			return fmt.Errorf("check star gift catalog: %w", err)
+		}
+		if !exists {
+			return domain.ErrStarGiftInvalid
+		}
+		// Live references that must survive: the gift stays (disabled) instead.
+		// peer_star_gifts has no FK to the catalog, so it is checked explicitly;
+		// every other table is guarded by ON DELETE RESTRICT below as well.
+		blockers := []string{
+			`SELECT 1 FROM peer_star_gifts WHERE gift_id=$1 LIMIT 1`,
+			`SELECT 1 FROM unique_star_gifts WHERE gift_id=$1 LIMIT 1`,
+			`SELECT 1 FROM star_gift_user_purchases WHERE gift_id=$1 LIMIT 1`,
+			`SELECT 1 FROM star_gift_purchase_forms WHERE gift_id=$1 LIMIT 1`,
+			`SELECT 1 FROM star_gift_purchase_commands WHERE gift_id=$1 LIMIT 1`,
+			`SELECT 1 FROM star_gift_craft_commands WHERE gift_id=$1 LIMIT 1`,
+			`SELECT 1 FROM star_gift_auctions WHERE gift_id=$1 LIMIT 1`,
+			`SELECT 1 FROM star_gift_admin_grant_commands WHERE gift_id=$1 LIMIT 1`,
+		}
+		for _, query := range blockers {
+			var one int
+			if err := tx.QueryRow(ctx, query, giftID).Scan(&one); err != nil {
+				if !errors.Is(err, pgx.ErrNoRows) {
+					return fmt.Errorf("check star gift references: %w", err)
+				}
+				continue
+			}
+			return domain.ErrStarGiftDeleteBlocked
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM gift_schedule WHERE gift_id=$1`, giftID); err != nil {
+			return fmt.Errorf("delete gift schedule: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM gift_price_overrides WHERE gift_id=$1`, giftID); err != nil {
+			return fmt.Errorf("delete gift price override: %w", err)
+		}
+		var collectibleIDs []int64
+		rows, err := tx.Query(ctx, `SELECT id FROM star_gift_collectible_revisions WHERE gift_id=$1`, giftID)
+		if err != nil {
+			return fmt.Errorf("list collectible revisions: %w", err)
+		}
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return fmt.Errorf("scan collectible revision: %w", err)
+			}
+			collectibleIDs = append(collectibleIDs, id)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("iterate collectible revisions: %w", err)
+		}
+		var attributeDocIDs []int64
+		if len(collectibleIDs) > 0 {
+			for _, table := range []string{"star_gift_collectible_models", "star_gift_collectible_patterns", "star_gift_collectible_backdrops"} {
+				attrRows, err := tx.Query(ctx, `SELECT document_id FROM `+table+` WHERE collectible_revision_id = ANY($1) AND document_id IS NOT NULL`, collectibleIDs)
+				if err != nil {
+					return fmt.Errorf("list collectible documents: %w", err)
+				}
+				for attrRows.Next() {
+					var docID int64
+					if err := attrRows.Scan(&docID); err != nil {
+						attrRows.Close()
+						return fmt.Errorf("scan collectible document: %w", err)
+					}
+					attributeDocIDs = append(attributeDocIDs, docID)
+				}
+				attrRows.Close()
+				if err := attrRows.Err(); err != nil {
+					return fmt.Errorf("iterate collectible documents: %w", err)
+				}
+				if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE collectible_revision_id = ANY($1)`, collectibleIDs); err != nil {
+					return mapGiftDeleteError(fmt.Errorf("delete collectible attributes: %w", err))
+				}
+			}
+			if _, err := tx.Exec(ctx, `DELETE FROM star_gift_collectible_revisions WHERE gift_id=$1`, giftID); err != nil {
+				return mapGiftDeleteError(fmt.Errorf("delete collectible revisions: %w", err))
+			}
+			result.Collectibles = len(collectibleIDs)
+		}
+		var revisionDocIDs []int64
+		revRows, err := tx.Query(ctx, `SELECT id, document_id FROM star_gift_catalog_revisions WHERE gift_id=$1`, giftID)
+		if err != nil {
+			return fmt.Errorf("list catalog revisions: %w", err)
+		}
+		var revisionIDs []int64
+		for revRows.Next() {
+			var id, docID int64
+			if err := revRows.Scan(&id, &docID); err != nil {
+				revRows.Close()
+				return fmt.Errorf("scan catalog revision: %w", err)
+			}
+			revisionIDs = append(revisionIDs, id)
+			revisionDocIDs = append(revisionDocIDs, docID)
+		}
+		revRows.Close()
+		if err := revRows.Err(); err != nil {
+			return fmt.Errorf("iterate catalog revisions: %w", err)
+		}
+		if len(revisionIDs) > 0 {
+			if _, err := tx.Exec(ctx, `DELETE FROM star_gift_catalog_revisions WHERE gift_id=$1`, giftID); err != nil {
+				return mapGiftDeleteError(fmt.Errorf("delete catalog revisions: %w", err))
+			}
+			result.Revisions = len(revisionIDs)
+		}
+		for _, docID := range append(revisionDocIDs, attributeDocIDs...) {
+			if docID <= 0 {
+				continue
+			}
+			tag, err := tx.Exec(ctx, `DELETE FROM documents WHERE id=$1`, docID)
+			if err != nil {
+				var pgErr *pgconn.PgError
+				if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+					continue
+				}
+				return fmt.Errorf("delete star gift document: %w", err)
+			}
+			if tag.RowsAffected() > 0 {
+				result.Documents++
+			}
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM star_gift_catalog WHERE gift_id=$1`, giftID); err != nil {
+			return mapGiftDeleteError(fmt.Errorf("delete star gift catalog: %w", err))
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.StarGiftDeleteResult{}, err
+	}
+	return result, nil
+}
+
+// mapGiftDeleteError converts FK violations during catalog teardown into the
+// operator-facing blocked error; anything else propagates.
+func mapGiftDeleteError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+		return domain.ErrStarGiftDeleteBlocked
+	}
+	return err
 }
 
 func (s *StarGiftStore) AnimationJSON(ctx context.Context, giftID int64) ([]byte, bool, error) {
